@@ -1,0 +1,6 @@
+{
+    "system": "hp",
+    "model": "anthropic/claude-sonnet-4.5",
+    "story_name": "hp4_3",
+    "story_plan_creation_chat": "https://chatgpt.com/g/g-p-68ac7ea7e99c819185db58962c7ba43c-hp2/c/68ac7f2b-12dc-8320-a3d5-40bdc6111cbb"
+}
