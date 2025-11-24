@@ -1,12 +1,12 @@
 import os
 import json
 
-from utils import getSystemInstructions, debug, yellow, endc
+from utils import getSystemInstructions
 import model_tools
 from model_tools import Toolbox
 from callbacks import WebCallbackHandler
 from openrouter import OpenRouterProvider
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO
 
 #list_story_files_tool_handler
 #write_story_file_tool_handler
@@ -51,14 +51,14 @@ class Narrator:
         return self.provider.loadMessages(self.story_history_path)
 
     @staticmethod
-    def initFromHistory(story_name: str, socket: SocketIO) -> "Narrator | None":
+    def initFromHistory(story_name: str, socket: SocketIO) -> "Narrator":
         history_path = f"./stories/{story_name}/history.json"
-        if os.path.exists(history_path):
-            with open(history_path) as f:
-                history_data: dict[str, str] = json.load(f)
-                model_name = history_data["model_name"]
-                system_name = history_data["system_name"]
-                return Narrator(model_name, story_name, system_name, socket)
+        with open(history_path) as f:
+            history_data: dict[str, str] = json.load(f)
+            model_name = history_data["model_name"]
+            system_name = history_data["system_name"]
+            return Narrator(model_name, story_name, system_name, socket)
+        
 
     def loadStory(self):
         history = self.loadMessages()
@@ -102,11 +102,11 @@ class Narrator:
             
             # Handle assistant messages
             elif role == "assistant":
-                # Check if there's thinking/reasoning
-                if msg.get("reasoning") and msg.get("reasoning").strip():
+                reasoning = msg.get("reasoning", "").strip()
+                if reasoning != "":
                     frontend_messages.append({
                         "type": "thinking",
-                        "content": msg.get("reasoning", ""),
+                        "content": reasoning,
                         "timestamp": msg.get("timestamp", "")
                     })
                 

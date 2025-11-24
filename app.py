@@ -24,27 +24,30 @@ models = [
     "moonshotai/kimi-k2-0905"
 ]
 
+def init_narrator(story_name: str, story_info: dict) -> Narrator:
+    if historyExists(story_name):
+        if debug(): print(lime, f"loading existing history for story: '{story_name}'", endc)
+        return Narrator.initFromHistory(story_name, socket)
+    else:
+        if debug(): print(green, f"creating new history for story: '{story_name}'", endc)
+        return Narrator(
+            model_name = story_info["model_name"],
+            system_name = story_info["system_name"],
+            story_name = story_name,
+            socket = socket,
+        )
+
+
 @socket.on('select_story')
 def select_story(data: dict[str, str]):
     if debug():
         print(cyan, f"selected story: '{data['selected_story']}'", endc)
+    print(json.dumps(data, indent=2))
     story_name = data['selected_story']
     story_info = loadStoryInfo(story_name)
-    model_name = story_info['model']
-    system_name = story_info['system']
 
     global narrator
-    if historyExists(story_name):
-        if debug(): print(lime, f"loading existing history for story: '{story_name}'", endc)
-        narrator = Narrator.initFromHistory(story_name, socket)
-    else:
-        if debug(): print(green, f"creating new history for story: '{story_name}'", endc)
-        narrator = Narrator(
-            model_name = model_name,
-            system_name = system_name,
-            story_name = story_name,
-            socket = socket,
-        )
+    narrator = init_narrator(story_name, story_info)
     if debug(): print(cyan, f"narrator initialized for story: '{story_name}'", endc)
     narrator.loadStory()
     emit('story_locked', {"model_name": model_name, "system_name": system_name})
