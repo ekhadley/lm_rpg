@@ -143,3 +143,6 @@ class Narrator:
         self.provider.run()
         self.socket.emit('turn_end')
         self.saveMessages()
+
+    def __str__(self) -> str:
+        return f"Narrator(model_name={self.model_name}, system={self.system_name}, tools=Toolbox[{len(self.tb.tools)}])"

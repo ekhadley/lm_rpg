@@ -25,6 +25,7 @@ class OpenRouterStream:
         thinking_effort: str,
         key: str
     ):
+        self.pending_objects = []
         self.response_stream = requests.post(
             url = "https://openrouter.ai/api/v1/chat/completions",
             headers = {
@@ -58,6 +59,9 @@ class OpenRouterStream:
         return self
 
     def __next__(self) -> dict:
+        if self.pending_objects:
+            return self.pending_objects.pop(0)
+
         while True:
             # Ensure we have at least one complete SSE event in the buffer
             def find_event_delimiter(buf: str) -> tuple[int, int]:
@@ -128,10 +132,35 @@ class OpenRouterStream:
                 continue
 
             try:
-                parsed = json.loads(data_payload)
-                self.decode_retry_count = 0
-                return parsed
+                # Attempt to parse one or more JSON objects from the payload
+                decoder = json.JSONDecoder()
+                pos = 0
+                while pos < len(data_payload):
+                    # Skip whitespace
+                    while pos < len(data_payload) and data_payload[pos].isspace():
+                        pos += 1
+                    if pos >= len(data_payload):
+                        break
+                    
+                    obj, end = decoder.raw_decode(data_payload, idx=pos)
+                    self.pending_objects.append(obj)
+                    pos = end
+
+                if self.pending_objects:
+                    self.decode_retry_count = 0
+                    return self.pending_objects.pop(0)
+                
+                # If we have content but parsed nothing, raise error to hit retry logic
+                if data_payload.strip():
+                    raise json.JSONDecodeError("No JSON object found", data_payload, 0)
+
             except json.JSONDecodeError as e:
+                if self.pending_objects:
+                    # We parsed some objects but failed on the rest. Return what we have.
+                    self.decode_retry_count = 0
+                    if debug(): print(f"{bold+orange}Partial parse success. Discarding tail: {data_payload[pos:]}{endc}")
+                    return self.pending_objects.pop(0)
+
                 self.decode_retry_count += 1
                 if self.decode_retry_count > self.decode_retry_limit or self.content_stream_finished:
                     if debug():

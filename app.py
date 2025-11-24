@@ -13,30 +13,26 @@ socket = SocketIO(app, cors_allowed_origins="*")
 global narrator
 narrator = None
 models = [
+    "openai/gpt-5.1",
     "openai/gpt-5",
-    #"openai/o4",
-    #"openai/gpt-4o-mini",
-    "anthropic/claude-opus-4.1",
     "anthropic/claude-sonnet-4.5",
-    #"anthropic/claude-sonnet-4",
-    #"anthropic/claude-3.5-haiku",
-    "google/gemini-2.5-pro",
+    "anthropic/claude-opus-4.1",
+    "google/gemini-3-pro-preview",
     "moonshotai/kimi-k2-0905"
 ]
 
-def init_narrator(story_name: str, story_info: dict) -> Narrator:
+def init_narrator(story_name: str, story_info: dict, model_name: str) -> Narrator:
     if historyExists(story_name):
         if debug(): print(lime, f"loading existing history for story: '{story_name}'", endc)
         return Narrator.initFromHistory(story_name, socket)
     else:
         if debug(): print(green, f"creating new history for story: '{story_name}'", endc)
         return Narrator(
-            model_name = story_info["model_name"],
-            system_name = story_info["system_name"],
+            model_name = model_name,
+            system_name = story_info["system"],
             story_name = story_name,
             socket = socket,
         )
-
 
 @socket.on('select_story')
 def select_story(data: dict[str, str]):
@@ -45,16 +41,20 @@ def select_story(data: dict[str, str]):
     print(json.dumps(data, indent=2))
     story_name = data['selected_story']
     story_info = loadStoryInfo(story_name)
+    model_name = story_info.get("model", data.get('model_name'))
+    print(json.dumps(story_info, indent=2))
 
     global narrator
-    narrator = init_narrator(story_name, story_info)
+    narrator = init_narrator(story_name, story_info, model_name)
     if debug(): print(cyan, f"narrator initialized for story: '{story_name}'", endc)
     narrator.loadStory()
-    emit('story_locked', {"model_name": model_name, "system_name": system_name})
+    emit('story_locked', {"model_name": narrator.model_name, "system_name": story_info["system"]})
+    print(f"narrator initialized: {narrator}")
 
 @socket.on('user_message')
 def handle_user_message(data: dict[str, str]):
     global narrator
+    assert narrator is not None, f"Narrator has not been initialized."
     narrator.handleUserMessage(data)
 
 @socket.on('create_story')

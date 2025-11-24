@@ -75,8 +75,22 @@ class Toolbox:
         self.tool_map = {tool.name: tool for tool in self.tools}
     
     def getToolResult(self, tool_name: str, parameters: dict) -> str:
+        print(lime, parameters, endc)
         if isinstance(parameters, str):
-            parameters = json.loads(parameters) if parameters != "" else {}
+            if parameters != "":
+                try:
+                    parameters = json.loads(parameters)
+                except json.JSONDecodeError:
+                    try:
+                        parameters, _ = json.JSONDecoder().raw_decode(parameters)
+                    except json.JSONDecodeError:
+                        # If we can't parse it, it might be that the model sent a string that isn't JSON.
+                        # We'll leave it as is and let the tool handler deal with it or fail.
+                        # But actually the current code assumes parameters becomes a dict.
+                        # If parsing fails completely, we should probably raise or return an error string.
+                        raise
+            else:
+                parameters = {}
         if tool_name in self.tool_map:
             return self.tool_map[tool_name].getResult(parameters)
         else:

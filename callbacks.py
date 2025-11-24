@@ -93,3 +93,4 @@ class WebCallbackHandler(CallbackHandler):
 
     def emit(self, event, **kwargs):
         self.socket.emit(event, kwargs)
+        self.socket.sleep(0)
