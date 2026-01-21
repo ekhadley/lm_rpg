@@ -33,8 +33,17 @@ def truncateForDebug(obj: object, max_length: int=200):
 def listStoryNames() -> list[str]:
     return sorted(os.listdir("./stories"))
 
+def _system_has_instructions(system_name: str) -> bool:
+    """Returns True only if the system has a base instructions.md file."""
+    return os.path.exists(f"{GAME_SYSTEMS_ROOT_DIR}/{system_name}/instructions.md")
+
+def isValidGameSystem(system_name: str) -> bool:
+    """Public validator to ensure the requested system has the required assets."""
+    return _system_has_instructions(system_name)
+
 def listGameSystemNames() -> list[str]:
-    return sorted(os.listdir(f"{GAME_SYSTEMS_ROOT_DIR}"))
+    """Only return systems that are actually usable (have instructions)."""
+    return sorted([name for name in os.listdir(f"{GAME_SYSTEMS_ROOT_DIR}") if _system_has_instructions(name)])
 
 def makeNewStoryDir(story_name: str, system: str, model_name: str):
     story_dir = f"./stories/{story_name}"
@@ -53,28 +62,15 @@ def loadStoryInfo(story_name: str) -> dict[str, str]:
 def historyExists(story_name: str) -> bool:
     return os.path.exists(f"./stories/{story_name}/history.json")
 
-def getSystemInstructions(system_name: str, instructions_name: str = "instructions.md") -> str:
-    with open(f"{GAME_SYSTEMS_ROOT_DIR}/{system_name}/{instructions_name}", 'r') as file:
-        content = file.read()
-        return str(content)
-
-def _getAllSystemFiles(system_name: str) -> dict[str, str]:
-    instructions: dict[str, str] = {}
-    for file in os.listdir(f"{GAME_SYSTEMS_ROOT_DIR}/{system_name}"):
-        with open(f"{GAME_SYSTEMS_ROOT_DIR}/{system_name}/{file}", 'r') as file:
-            content = file.read()
-            instructions[str(file)] = str(content)
-    return instructions
-
-def _getFullStoryInstruction(system_name: str, story_name: str) -> str: # fetches the base instructions, as well as any of pc.md, story_plan.md, story_summary.md, if they exist.
-    sys_instructions = _getAllSystemFiles(system_name)["instructions.md"]
-    story_files = ["pc.md", "story_plan.md", "story_summary.md"]
-    story_instructions = ""
-    for file_name in story_files:
+def getFullStoryInstruction(system_name: str, story_name: str) -> str:
+    """Fetches the system instructions and appends any existing story files (pc.md, story_plan.md, story_summary.md)."""
+    with open(f"{GAME_SYSTEMS_ROOT_DIR}/{system_name}/instructions.md", 'r') as f:
+        result = f.read()
+    
+    for file_name in ["pc.md", "story_plan.md", "story_summary.md"]:
         try:
-            with open(f"{STORIES_ROOT_DIR}/{story_name}/{file_name}", 'r') as file:
-                content = file.read()
-                story_instructions += f"\n---\n{content}"
+            with open(f"{STORIES_ROOT_DIR}/{story_name}/{file_name}", 'r') as f:
+                result += f"\n---\n{f.read()}"
         except FileNotFoundError:
             continue
-    return sys_instructions + story_instructions
+    return result

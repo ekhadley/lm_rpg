@@ -1,30 +1,27 @@
 import os
 import json
+import importlib.util
 
-from utils import getSystemInstructions
-import model_tools
+from utils import getFullStoryInstruction
 from model_tools import Toolbox
 from callbacks import WebCallbackHandler
 from openrouter import OpenRouterProvider
 from flask_socketio import SocketIO
 
-#list_story_files_tool_handler
-#write_story_file_tool_handler
-#append_story_file_tool_handler
-#read_story_file_tool_handler
-#roll_dice_tool_handler
+SYSTEMS_DIR = "systems"
 
-def makeNarratorToolbox(story_name: str, system_name: str) -> model_tools.Toolbox:
-    return model_tools.Toolbox([
-        model_tools.list_story_files_tool_handler,
-        model_tools.write_story_file_tool_handler,
-        model_tools.append_story_file_tool_handler,
-        model_tools.read_story_file_tool_handler,
-        model_tools.roll_dice_tool_handler,
-    ], default_kwargs = {
-        "story_name": story_name,
-        "system_name": system_name,
-    })
+def makeNarratorToolbox(story_name: str, system_name: str) -> Toolbox:
+    """
+    Dynamically load the system's tools.py and call its make_toolbox().
+    Crashes if tools.py doesn't exist or make_toolbox() fails.
+    """
+    tools_path = os.path.join(SYSTEMS_DIR, system_name, "tools.py")
+    
+    spec = importlib.util.spec_from_file_location(f"{system_name}_tools", tools_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    
+    return module.make_toolbox(story_name, system_name)
     
 class Narrator:
     def __init__(self, model_name: str, story_name: str, system_name: str, socket: SocketIO):
@@ -32,7 +29,7 @@ class Narrator:
         self.system_name: str = system_name
         self.tb: Toolbox = makeNarratorToolbox(story_name, system_name)
         self.socket: SocketIO = socket
-        self.system_prompt = getSystemInstructions(system_name)
+        self.system_prompt = getFullStoryInstruction(system_name, story_name)
         self.story_history_path = f"./stories/{story_name}/history.json"
         self.thinking_effort = "high"
 

@@ -4,7 +4,6 @@ import requests
 import copy
 import os
 
-import model_tools
 from model_tools import Toolbox
 
 import callbacks
@@ -321,32 +320,3 @@ class OpenRouterProvider():
         })
     
 
-if __name__ == "__main__":
-    basic_tb = Toolbox([ # demo
-        model_tools.list_directory_tool_handler,
-        model_tools.read_file_tool_handler,
-        model_tools.random_number_tool_handler
-    ])
-
-    asst = OpenRouterProvider(
-        #model_name = "openai/o4-mini",
-        model_name = "openai/gpt-4o-mini",
-        #model_name = "anthropic/claude-3-haiku",
-        #model_name = "anthropic/claude-3.5-haiku",
-        #model_name = "anthropic/claude-sonnet-4",
-        system_prompt = "You are a helpful assistant that can use tools and talks like a pirate.",
-        thinking_effort = "high",
-        toolbox = basic_tb,
-        callback_handler = callbacks.TerminalPrinter(),
-    )
-
-    #asst.addUserMessage("Hello assistant. Can you generate a random number from 1-10 and add to it the number of files in the current directory?")
-    #asst.addUserMessage("Hello assistant. Can you generate a random number from 1-10?")
-    #asst.addUserMessage("Hello assistant. Can you generate a random numbers from 1-10 and add it to a random number from 1-20?")
-    #asst.addUserMessage("Hello assistant. What is the surface area of Mars in hectares?")
-    asst.addUserMessage("Hello assistant. How many files are in the current directory?")
-    #asst.addUserMessage("Hello assistant. How are you?")
-    asst.run()
-
-    #asst.addUserMessage("Give me 1 fun fact about sheep.")
-    #asst.run()

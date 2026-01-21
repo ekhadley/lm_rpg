@@ -97,40 +97,8 @@ class Toolbox:
             if debug(): print(bold, red, f"attempt to call nonexistant tool", endc)
             return f"error: Tool {tool_name} not found."
 
-    def updateDefaultKwargs(self, kwargs: dict):
-        self.kwargs = kwargs
-        for tool in self.tools:
-            tool.kwargs = kwargs
-        
     def getToolSchemas(self) -> list[dict[str, str]]:
         return [tool.schema for tool in self.tools]
-
-# Tool handlers
-# descriptions and argument properties are parsed automatically from the docstring.
-# They have to be formatted exactly like this.
-# We handle errors inside these functions just to give nicer error messages to the model. You don't have to handle them here.
-# Toolboxes can be given default values as kwargs which will get passed to every function call.
-def random_number_tool_handler(max: int, **kwargs) -> int:
-    """random_number: Generate a random number from 1 to max inclusive.
-    max (integer): The maximum value of the random number.
-    """
-    if max < 1: raise ValueError("max argument must be greater than 0")
-    random_number = random.randint(1, max)
-    return random_number
-
-def list_directory_tool_handler(**kwargs) -> list[str]:
-    """list_files: List the files in the local directory.
-    """
-    files = os.listdir(f"./")
-    return files
-
-def read_file_tool_handler(file_name: str, **kwargs) -> str:
-    """read_file: Read the contents of a file in the local directory.
-    file_name (string): Name of the file to be read.
-    """
-    with open(f"./{file_name}", 'r') as file:
-        content = file.read()
-    return content
 
 ############## story tools ################
 
@@ -175,14 +143,6 @@ def append_story_file_tool_handler(file_name: str, contents: str, **kwargs) -> s
     if exists: return "Contents appended to file successfully."
     else: return "File created and contents added successfully."
 
-def _summarize_story_tool_handler(contents: str, **kwargs) -> str:
-    """summarize_story: This will overwrite the contents of the story_summary.md file with the contents provided. 
-    contents (string): The contents to write to the story summary file. Do not include backticks around the contents to be saved.
-    """
-    with open(f"./stories/{kwargs['story_name']}/story_summary.md", 'w') as file:
-        file.write(contents)
-    return "Story summary saved successfully."
-
 def read_story_summary_tool_handler(**kwargs) -> str:
     """read_story_summary: Read the story summary file (story_summary.md) in the current story directory.
     """
@@ -194,13 +154,6 @@ def read_story_plan_tool_handler(**kwargs) -> str:
     """read_story_plan: Read the story plan file, laying out the behind-the-scenes architecture of the current story.
     """
     with open(f"./stories/{kwargs['story_name']}/story_plan.md", 'r') as file:
-        content = file.read()
-    return content
-
-def read_story_planning_guide(**kwargs) -> str:
-    """read_story_planning_guide: Read the story planning guide, instructing you how to create a story plan. Only use this if story_plan.md does not alredy exist.
-    """
-    with open(f"./instructions/planning_guide.md", 'r') as file:
         content = file.read()
     return content
 

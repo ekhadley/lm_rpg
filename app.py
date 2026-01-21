@@ -13,12 +13,11 @@ socket = SocketIO(app, cors_allowed_origins="*")
 global narrator
 narrator = None
 models = [
-    "openai/gpt-5.1",
-    "openai/gpt-5",
-    "anthropic/claude-sonnet-4.5",
-    "anthropic/claude-opus-4.1",
+    "anthropic/claude-opus-4.5",
+    "anthropic/claude-3-5-haiku",
+    "openai/gpt-5.2",
+    "openai/gpt-4o-mini",
     "google/gemini-3-pro-preview",
-    "moonshotai/kimi-k2-0905"
 ]
 
 def init_narrator(story_name: str, story_info: dict, model_name: str) -> Narrator:
@@ -41,6 +40,10 @@ def select_story(data: dict[str, str]):
     print(json.dumps(data, indent=2))
     story_name = data['selected_story']
     story_info = loadStoryInfo(story_name)
+    system_name = story_info.get("system")
+    if not system_name or not isValidGameSystem(system_name):
+        emit('error', {"message": f"Invalid or unavailable system for story '{story_name}': {system_name}"})
+        return
     model_name = story_info.get("model", data.get('model_name'))
     print(json.dumps(story_info, indent=2))
 
@@ -63,6 +66,9 @@ def create_story(data: dict[str, str]):
     system = data['system_name']
     model_name = data['model_name']
     if story_name:
+        if not isValidGameSystem(system):
+            emit('error', {"message": f"Invalid or unavailable system '{system}'"})
+            return
         makeNewStoryDir(story_name, system, model_name)
 
 @app.route('/')
