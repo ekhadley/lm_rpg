@@ -3,6 +3,9 @@ import json
 import requests
 import copy
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from model_tools import Toolbox
 

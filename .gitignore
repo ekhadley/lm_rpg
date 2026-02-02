@@ -1,6 +1,7 @@
 Pipfile
 *old.md
-# stories/*
+stories
 __pycache__
+.env
 
 *planning_guide*
