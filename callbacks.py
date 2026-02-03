@@ -21,7 +21,7 @@ class CallbackHandler:
         pass
     def tool_submit(self, names: list[str], inputs: list[dict], results: list[str]):
         pass
-    def turn_end(self):
+    def turn_end(self, cost_stats: dict = None):
         pass
 
 class TerminalPrinter(CallbackHandler): # streams text into the terminal in nice blocks.
@@ -54,7 +54,7 @@ class TerminalPrinter(CallbackHandler): # streams text into the terminal in nice
         for i, name in enumerate(names):
             if name not in ["summarize_story", "read_story_summary", "read_character_creation_guide", "write_file", "read_file"]:
                 print(self.tool_color, f"\nTool output submitted: {name}({inputs[i]}) = {results[i]}", endc)
-    def turn_end(self):
+    def turn_end(self, cost_stats: dict = None):
         self.narrating = False
 
 class WebCallbackHandler(CallbackHandler):
@@ -87,9 +87,9 @@ class WebCallbackHandler(CallbackHandler):
         self.outputting_text = False
         self.emit('tool_submit', tools=[{"name": names[i], "inputs": inputs[i], "result": results[i]} for i in range(len(names))])
 
-    def turn_end(self):
+    def turn_end(self, cost_stats: dict = None):
         self.outputting_text = False
-        self.emit('turn_end')
+        self.emit('turn_end', cost_stats=cost_stats)
 
     def emit(self, event, **kwargs):
         self.socket.emit(event, kwargs)

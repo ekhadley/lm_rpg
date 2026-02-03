@@ -9,15 +9,200 @@ const userInput = document.getElementById('user-input');
 const messageForm = document.getElementById('message-form');
 const newStoryBtn = document.getElementById('new-story-btn');
 const createStoryBtn = document.getElementById('create-story-btn');
-const createStoryContainer = document.getElementById('create-story-container');
+const createStoryModal = document.getElementById('create-story-modal');
+const createStoryModalClose = document.getElementById('create-story-modal-close');
+const createStoryModalCancel = document.getElementById('create-story-modal-cancel');
 const storyList = document.getElementById('story-list');
-const createStoryForm = document.getElementById('create-story-form');
 const exportButton = document.getElementById('export-button');
-const modelSelect = document.getElementById('model-select');
-const modelSelectMeasure = document.getElementById('model-select-measure');
-const modelSelectInline = document.getElementById('model-select-inline');
-const systemSelect = document.getElementById('system-select');
-const systemSelectMeasure = document.getElementById('system-select-measure');
+const archiveButton = document.getElementById('archive-button');
+const themeToggleBtn = document.getElementById('theme-toggle-btn');
+const archivePopup = document.getElementById('archive-popup');
+const archivePopupCancel = document.getElementById('archive-popup-cancel');
+const archivePopupConfirm = document.getElementById('archive-popup-confirm');
+const costButton = document.getElementById('cost-button');
+const costPopup = document.getElementById('cost-popup');
+const costTotalTokens = document.getElementById('cost-total-tokens');
+const costAvgTokens = document.getElementById('cost-avg-tokens');
+const costTotalCost = document.getElementById('cost-total-cost');
+const costAvgCost = document.getElementById('cost-avg-cost');
+
+// Modal dropdown elements
+const createSystemSelectCustom = document.getElementById('create-system-select-custom');
+const createSystemSelectDropdown = document.getElementById('create-system-select-dropdown');
+const createSystemSelect = document.getElementById('create-system-select');
+const createModelSelectCustom = document.getElementById('create-model-select-custom');
+const createModelSelectDropdown = document.getElementById('create-model-select-dropdown');
+const createModelSelect = document.getElementById('create-model-select');
+
+// Select story config modal elements
+const selectStoryConfigModal = document.getElementById('select-story-config-modal');
+const selectStoryConfigModalClose = document.getElementById('select-story-config-modal-close');
+const selectStoryConfigModalCancel = document.getElementById('select-story-config-modal-cancel');
+const selectStoryConfigBtn = document.getElementById('select-story-config-btn');
+const selectStorySystemSelectCustom = document.getElementById('select-story-system-select-custom');
+const selectStorySystemSelectDropdown = document.getElementById('select-story-system-select-dropdown');
+const selectStorySystemSelect = document.getElementById('select-story-system-select');
+const selectStoryModelSelectCustom = document.getElementById('select-story-model-select-custom');
+const selectStoryModelSelectDropdown = document.getElementById('select-story-model-select-dropdown');
+const selectStoryModelSelect = document.getElementById('select-story-model-select');
+
+// Store the pending story name when modal is shown
+let pendingStoryName = null;
+
+// Custom Dropdown Functionality
+function initCustomDropdown(customSelect, dropdown, nativeSelect, selectType) {
+    if (!customSelect || !dropdown || !nativeSelect) return;
+    
+    const valueSpan = customSelect.querySelector('.custom-select-value');
+    let isOpen = false;
+    
+    // Initialize selected value
+    const selectedOption = dropdown.querySelector('.custom-select-option[data-selected="true"]');
+    if (selectedOption) {
+        valueSpan.textContent = selectedOption.textContent;
+        selectedOption.classList.add('selected');
+        nativeSelect.value = selectedOption.dataset.value;
+    } else {
+        const firstOption = dropdown.querySelector('.custom-select-option');
+        if (firstOption) {
+            valueSpan.textContent = firstOption.textContent;
+            firstOption.classList.add('selected');
+            nativeSelect.value = firstOption.dataset.value;
+        }
+    }
+    
+    // Toggle dropdown
+    function toggleDropdown() {
+        if (nativeSelect.disabled) return;
+        
+        isOpen = !isOpen;
+        if (isOpen) {
+            customSelect.classList.add('active');
+            dropdown.classList.add('show');
+            // Close other dropdowns
+            if (selectType === 'system') {
+                if (modelSelectDropdown) modelSelectDropdown.classList.remove('show');
+                if (modelSelectCustom) modelSelectCustom.classList.remove('active');
+            } else {
+                if (systemSelectDropdown) systemSelectDropdown.classList.remove('show');
+                if (systemSelectCustom) systemSelectCustom.classList.remove('active');
+            }
+        } else {
+            customSelect.classList.remove('active');
+            dropdown.classList.remove('show');
+        }
+    }
+    
+    // Close dropdown
+    function closeDropdown() {
+        isOpen = false;
+        customSelect.classList.remove('active');
+        dropdown.classList.remove('show');
+    }
+    
+    // Handle custom select click
+    customSelect.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDropdown();
+    });
+    
+    // Handle keyboard
+    customSelect.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleDropdown();
+        } else if (e.key === 'Escape') {
+            closeDropdown();
+        }
+    });
+    
+    // Handle option clicks
+    dropdown.querySelectorAll('.custom-select-option').forEach(option => {
+        option.addEventListener('click', (e) => {
+            e.stopPropagation();
+            
+            // Update selected state
+            dropdown.querySelectorAll('.custom-select-option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+            option.classList.add('selected');
+            
+            // Update display value
+            valueSpan.textContent = option.textContent;
+            
+            // Update native select
+            nativeSelect.value = option.dataset.value;
+            nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            closeDropdown();
+        });
+    });
+    
+    // Sync with native select changes (for when backend updates it)
+    nativeSelect.addEventListener('change', () => {
+        const selectedValue = nativeSelect.value;
+        const option = dropdown.querySelector(`.custom-select-option[data-value="${selectedValue}"]`);
+        if (option) {
+            dropdown.querySelectorAll('.custom-select-option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+            option.classList.add('selected');
+            valueSpan.textContent = option.textContent;
+        }
+    });
+    
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+        if (!customSelect.contains(e.target) && !dropdown.contains(e.target)) {
+            closeDropdown();
+        }
+    });
+    
+    // Update disabled state
+    function updateDisabledState() {
+        if (nativeSelect.disabled) {
+            customSelect.classList.add('disabled');
+        } else {
+            customSelect.classList.remove('disabled');
+        }
+    }
+    
+    // Watch for disabled state changes
+    const observer = new MutationObserver(updateDisabledState);
+    observer.observe(nativeSelect, { attributes: true, attributeFilter: ['disabled'] });
+    updateDisabledState();
+}
+
+// Initialize modal custom dropdowns when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        if (createSystemSelectCustom && createSystemSelectDropdown && createSystemSelect) {
+            initCustomDropdown(createSystemSelectCustom, createSystemSelectDropdown, createSystemSelect, 'system');
+        }
+        if (createModelSelectCustom && createModelSelectDropdown && createModelSelect) {
+            initCustomDropdown(createModelSelectCustom, createModelSelectDropdown, createModelSelect, 'model');
+        }
+        if (selectStorySystemSelectCustom && selectStorySystemSelectDropdown && selectStorySystemSelect) {
+            initCustomDropdown(selectStorySystemSelectCustom, selectStorySystemSelectDropdown, selectStorySystemSelect, 'system');
+        }
+        if (selectStoryModelSelectCustom && selectStoryModelSelectDropdown && selectStoryModelSelect) {
+            initCustomDropdown(selectStoryModelSelectCustom, selectStoryModelSelectDropdown, selectStoryModelSelect, 'model');
+        }
+    });
+} else {
+    if (createSystemSelectCustom && createSystemSelectDropdown && createSystemSelect) {
+        initCustomDropdown(createSystemSelectCustom, createSystemSelectDropdown, createSystemSelect, 'system');
+    }
+    if (createModelSelectCustom && createModelSelectDropdown && createModelSelect) {
+        initCustomDropdown(createModelSelectCustom, createModelSelectDropdown, createModelSelect, 'model');
+    }
+    if (selectStorySystemSelectCustom && selectStorySystemSelectDropdown && selectStorySystemSelect) {
+        initCustomDropdown(selectStorySystemSelectCustom, selectStorySystemSelectDropdown, selectStorySystemSelect, 'system');
+    }
+    if (selectStoryModelSelectCustom && selectStoryModelSelectDropdown && selectStoryModelSelect) {
+        initCustomDropdown(selectStoryModelSelectCustom, selectStoryModelSelectDropdown, selectStoryModelSelect, 'model');
+    }
+}
 
 // Store conversation history
 let conversationHistory = [];
@@ -41,107 +226,193 @@ if (storyList) {
         if (storyItem) {
             let storyTitle = storyItem.getAttribute('data-story');
             console.log('Selected story:', storyTitle);
-            const modelName = modelSelect ? modelSelect.value : undefined;
-            socket.emit('select_story', { "selected_story": storyTitle, "model_name": modelName });
-            // Clear chat history when switching stories
-            if (document.getElementById('current-story-title')) {
-                document.getElementById('current-story-title').textContent = storyTitle;
+            
+            // Check if story has unknown system/model (indicates missing info.json)
+            const systemSpan = storyItem.querySelector('.story-system');
+            const modelSpan = storyItem.querySelector('.story-meta');
+            const system = systemSpan ? systemSpan.textContent.trim() : '';
+            const model = modelSpan ? modelSpan.textContent.trim() : '';
+            
+            if (system === 'unknown' || model === 'unknown') {
+                // Show modal to select system and model
+                pendingStoryName = storyTitle;
+                if (selectStoryConfigModal) {
+                    selectStoryConfigModal.classList.add('show');
+                }
+            } else {
+                // Story has info.json, proceed normally
+                selectStoryDirectly(storyTitle);
             }
-            if (chatHistory) {
-                chatHistory.innerHTML = '';
-            }
-            // Hide welcome wrapper and show chat wrapper
-            if (welcomeWrapper) {
-                welcomeWrapper.style.display = 'none';
-            }
-            if (chatHeader) {
-                chatHeader.style.display = 'flex';
-            }
-            showTypingIndicator();
-            if (modelSelect) modelSelect.disabled = true; // lock immediately; backend will confirm actual model
-            if (systemSelect) systemSelect.disabled = true; // lock immediately; backend will confirm actual system
-            if (modelSelectInline) modelSelectInline.style.paddingTop = '0'; // tuck it under title without extra gap
         }
     });
 }
-// When backend confirms/locks a model and system for this story, reflect it in the UI
+
+// Function to select a story directly (used when info.json exists)
+function selectStoryDirectly(storyTitle) {
+    currentStory = storyTitle;
+    socket.emit('select_story', { "selected_story": storyTitle });
+    // Clear chat history when switching stories
+    if (document.getElementById('current-story-title')) {
+        document.getElementById('current-story-title').textContent = storyTitle;
+    }
+    if (chatHistory) {
+        chatHistory.innerHTML = '';
+    }
+    // Hide welcome wrapper and show chat wrapper
+    if (welcomeWrapper) {
+        welcomeWrapper.style.display = 'none';
+    }
+    if (chatHeader) {
+        chatHeader.style.display = 'flex';
+    }
+    showTypingIndicator();
+}
+
+// Handle select story config modal
+if (selectStoryConfigBtn) {
+    selectStoryConfigBtn.addEventListener('click', function() {
+        if (!pendingStoryName) return;
+        
+        const modelName = selectStoryModelSelect ? selectStoryModelSelect.value : 'openai/gpt-5.2';
+        const systemName = selectStorySystemSelect ? selectStorySystemSelect.value : 'hp';
+        
+        // Update sidebar immediately with selected values
+        if (storyList) {
+            const storyItems = storyList.querySelectorAll('.story-item');
+            storyItems.forEach(item => {
+                const storyName = item.getAttribute('data-story');
+                if (storyName === pendingStoryName) {
+                    const systemSpan = item.querySelector('.story-system');
+                    const modelSpan = item.querySelector('.story-meta');
+                    if (systemSpan) {
+                        systemSpan.textContent = systemName;
+                    }
+                    if (modelSpan) {
+                        modelSpan.textContent = modelName;
+                    }
+                }
+            });
+        }
+        
+        // Close modal
+        if (selectStoryConfigModal) {
+            selectStoryConfigModal.classList.remove('show');
+        }
+        
+        // Store current story name for updating sidebar
+        currentStory = pendingStoryName;
+        
+        // Emit select_story with system and model
+        socket.emit('select_story', {
+            "selected_story": pendingStoryName,
+            "model_name": modelName,
+            "system_name": systemName
+        });
+        
+        // Clear chat history when switching stories
+        if (document.getElementById('current-story-title')) {
+            document.getElementById('current-story-title').textContent = pendingStoryName;
+        }
+        if (chatHistory) {
+            chatHistory.innerHTML = '';
+        }
+        // Hide welcome wrapper and show chat wrapper
+        if (welcomeWrapper) {
+            welcomeWrapper.style.display = 'none';
+        }
+        if (chatHeader) {
+            chatHeader.style.display = 'flex';
+        }
+        showTypingIndicator();
+        
+        pendingStoryName = null;
+    });
+}
+
+// Handle modal close/cancel
+if (selectStoryConfigModalClose) {
+    selectStoryConfigModalClose.addEventListener('click', function() {
+        if (selectStoryConfigModal) {
+            selectStoryConfigModal.classList.remove('show');
+        }
+        pendingStoryName = null;
+    });
+}
+
+if (selectStoryConfigModalCancel) {
+    selectStoryConfigModalCancel.addEventListener('click', function() {
+        if (selectStoryConfigModal) {
+            selectStoryConfigModal.classList.remove('show');
+        }
+        pendingStoryName = null;
+    });
+}
+
+// Close modal when clicking outside
+if (selectStoryConfigModal) {
+    selectStoryConfigModal.addEventListener('click', function(e) {
+        if (e.target === selectStoryConfigModal) {
+            selectStoryConfigModal.classList.remove('show');
+            pendingStoryName = null;
+        }
+    });
+}
+// When backend confirms/locks a model and system for this story
 socket.on('story_locked', function(data) {
     console.log('Story locked with data:', data);
-    
-    if (modelSelect && data && data.model_name) {
-        // Temporarily enable to ensure value change works
-        modelSelect.disabled = false;
-        modelSelect.value = data.model_name;
-        modelSelect.disabled = true;
-        if (modelSelectInline) modelSelectInline.style.paddingTop = '0';
-        // Update width after setting value
-        if (modelSelectMeasure) {
-            const selectedText = modelSelect.options[modelSelect.selectedIndex]?.text || '';
-            modelSelectMeasure.textContent = selectedText;
-            const computed = window.getComputedStyle(modelSelect);
-            const paddingLeft = parseFloat(computed.paddingLeft) || 0;
-            const paddingRight = parseFloat(computed.paddingRight) || 0;
-            const borderLeft = parseFloat(computed.borderLeftWidth) || 0;
-            const borderRight = parseFloat(computed.borderRightWidth) || 0;
-            const extra = paddingLeft + paddingRight + borderLeft + borderRight + 12;
-            modelSelect.style.width = (modelSelectMeasure.offsetWidth + extra) + 'px';
-        }
-        console.log('Model select updated to:', modelSelect.value);
-    }
-    if (systemSelect && data && data.system_name) {
-        // Temporarily enable to ensure value change works
-        systemSelect.disabled = false;
-        systemSelect.value = data.system_name;
-        systemSelect.disabled = true;
-        // Update width after setting value
-        if (systemSelectMeasure) {
-            const selectedText = systemSelect.options[systemSelect.selectedIndex]?.text || '';
-            systemSelectMeasure.textContent = selectedText;
-            const computed = window.getComputedStyle(systemSelect);
-            const paddingLeft = parseFloat(computed.paddingLeft) || 0;
-            const paddingRight = parseFloat(computed.paddingRight) || 0;
-            const borderLeft = parseFloat(computed.borderLeftWidth) || 0;
-            const borderRight = parseFloat(computed.borderRightWidth) || 0;
-            const extra = paddingLeft + paddingRight + borderLeft + borderRight + 12;
-            systemSelect.style.width = (systemSelectMeasure.offsetWidth + extra) + 'px';
-        }
-        console.log('System select updated to:', systemSelect.value);
+    // Update the story item in the sidebar if it had unknown system/model
+    if (currentStory && storyList) {
+        const storyItems = storyList.querySelectorAll('.story-item');
+        storyItems.forEach(item => {
+            const storyName = item.getAttribute('data-story');
+            if (storyName === currentStory) {
+                const systemSpan = item.querySelector('.story-system');
+                const modelSpan = item.querySelector('.story-meta');
+                if (systemSpan && data.system_name) {
+                    systemSpan.textContent = data.system_name;
+                }
+                if (modelSpan && data.model_name) {
+                    modelSpan.textContent = data.model_name;
+                }
+            }
+        });
     }
 });
 
 
-// New story button
-if (newStoryBtn) {
-    newStoryBtn.addEventListener('click', function() {
-        const wasActive = createStoryContainer.classList.contains('active');
-        createStoryContainer.classList.toggle('active');
+
+if (createStoryBtn) {
+    createStoryBtn.addEventListener('click', function() {
+        const newStoryName = document.getElementById('new_story_name').value.trim();
+        if (!newStoryName) {
+            alert('Please enter a story name');
+            return;
+        }
+        const modelName = createModelSelect ? createModelSelect.value : 'openai/gpt-5.2';
+        const systemName = createSystemSelect ? createSystemSelect.value : 'hp';
         
-        // Focus the input field when opening the create story form
-        if (!wasActive && createStoryContainer.classList.contains('active')) {
-            const newStoryInput = document.getElementById('new_story_name');
-            if (newStoryInput) {
-                setTimeout(() => newStoryInput.focus(), 0);
-            }
+        socket.emit('create_story', { 
+            story_name: newStoryName,
+            model_name: modelName,
+            system_name: systemName
+        });
+        
+        if (createStoryModal) {
+            createStoryModal.classList.remove('show');
+        }
+        
+        // Clear input
+        const newStoryInput = document.getElementById('new_story_name');
+        if (newStoryInput) {
+            newStoryInput.value = '';
         }
     });
 }
 
-if (createStoryBtn) {
-    createStoryBtn.addEventListener('click', function() {
-        //e.preventDefault();
-        new_story_name = document.getElementById('new_story_name').value;
-        const modelName = modelSelect ? modelSelect.value : 'openai/gpt-5';
-        const systemName = systemSelect ? systemSelect.value : 'hp';
-        createStoryContainer.classList.remove('active');
-        socket.emit('create_story', { 
-            story_name: new_story_name,
-            model_name: modelName,
-            system_name: systemName
-        });
-        createStoryContainer.classList.remove('active');
-        addNewStory({ story_name: new_story_name });
-    });
-}
+// Handle story created event
+socket.on('story_created', function(data) {
+    addNewStory(data);
+});
 
 // Event listeners for messaging
 if (messageForm) {
@@ -163,6 +434,58 @@ if (messageForm) {
         }
     });
 }
+
+// Handle previous history (archived conversations displayed before live history)
+socket.on('previous_history', function(history) {
+    console.log('Loading previous history:', history);
+    
+    if (!history || history.length === 0) return;
+    
+    // Add a visual separator/header for previous conversations
+    const separator = document.createElement('div');
+    separator.className = 'history-separator';
+    separator.innerHTML = '<span>Previous Conversations</span>';
+    chatHistory.appendChild(separator);
+    
+    // Queue to match tool_use with tool_result in order
+    let pendingToolUses = [];
+    
+    // Render previous messages (similar to conversation_history handler)
+    history.forEach(function(message) {
+        if (message.type === 'user') {
+            if (message.content != "<|begin_conversation|>") {
+                addUserMessage(message.content, false);
+            }
+        } else if (message.type == "tool_result") {
+            const toolUse = pendingToolUses.shift();
+            if (toolUse) {
+                const tool_call = {
+                    tools: [{
+                        name: toolUse.name,
+                        inputs: toolUse.input,
+                        result: message.content
+                    }]
+                };
+                addToolUseToHistory(tool_call);
+            }
+        } else if (message.type === 'assistant') {
+            addAssistantMessageFromHistory(message.content);
+        } else if (message.type == "tool_use") {
+            pendingToolUses.push({
+                name: message.name,
+                input: message.input
+            });
+        } else if (message.type == "thinking") {
+            addThinkingFromHistory(message.content);
+        }
+    });
+    
+    // Add separator before current conversation if we had previous history
+    const currentSeparator = document.createElement('div');
+    currentSeparator.className = 'history-separator current';
+    currentSeparator.innerHTML = '<span>Current Conversation</span>';
+    chatHistory.appendChild(currentSeparator);
+});
 
 socket.on('conversation_history', function(history) {
     console.log('Loading conversation history:', history);
@@ -224,14 +547,61 @@ socket.on('assistant_ready', function() {
     //currentNarratorMessageElement = null;
 });
 
+// Handle archive response
+socket.on('history_archived', function(data) {
+    console.log('History archived:', data);
+    if (data.success) {
+        // Don't clear the UI - previous messages stay visible
+        // Add a separator to mark where the new conversation begins
+        if (chatHistory) {
+            // Add "Previous Conversations" separator at the very top if not already there
+            const existingSeparator = chatHistory.querySelector('.history-separator');
+            if (!existingSeparator) {
+                const prevSeparator = document.createElement('div');
+                prevSeparator.className = 'history-separator';
+                prevSeparator.innerHTML = '<span>Previous Conversations</span>';
+                chatHistory.insertBefore(prevSeparator, chatHistory.firstChild);
+            }
+            
+            // Add "Current Conversation" separator at the end
+            const currentSeparator = document.createElement('div');
+            currentSeparator.className = 'history-separator current';
+            currentSeparator.innerHTML = '<span>Current Conversation</span>';
+            chatHistory.appendChild(currentSeparator);
+            
+            scrollToBottom();
+        }
+        // Reset conversation history (model context) but keep UI
+        conversationHistory = [];
+        // Reset turn tracking
+        currentTurnToolCalls = [];
+        currentTurnThinking = '';
+        currentNarratorMessageElement = null;
+        lastNarratorMessageElement = null;
+        accumulatedContent = '';
+        // Enable user input - it's the user's turn to continue
+        if (userInput) {
+            userInput.disabled = false;
+            userInput.focus();
+        }
+    }
+});
+
 socket.on('think_start', function() {
     console.log('Model started thinking');
     isThinkingInProgress = true;
     currentTurnThinking = '';
+    
+    // Create message wrapper with animated thinking button immediately
+    ensureAssistantTurnWrapper();
+    updateSideButtonsAnimated();
 });
 
 socket.on('think_output', function(data) {
     currentTurnThinking += data.text;
+    
+    // Update thinking content in popup while thinking
+    updateThinkingPopupContent();
     scrollToBottom();
 });
 
@@ -239,45 +609,67 @@ socket.on('text_start', function() {
     console.log('Narrator switched to outputting text');
     isThinkingInProgress = false;
     
-    // If we're not retrying (currentNarratorMessageElement is null), create a new message element
+    // If we're not retrying (currentNarratorMessageElement is null), create or use existing wrapper
     if (!currentNarratorMessageElement) {
-        // Create wrapper for side buttons + message
-        const messageWrapper = document.createElement('div');
-        messageWrapper.className = 'assistant-turn-wrapper';
+        // Check if we have an in-progress wrapper from animated buttons
+        let messageWrapper = chatHistory.querySelector('.assistant-turn-wrapper.in-progress');
         
-        // Create side buttons container
-        const sideButtons = document.createElement('div');
-        sideButtons.className = 'assistant-side-buttons';
-        
-        // Add thinking button if we have thinking content
-        if (currentTurnThinking) {
-            const thinkingBtn = createThinkingButton(currentTurnThinking, false);
-            sideButtons.appendChild(thinkingBtn);
+        if (messageWrapper) {
+            // Use existing wrapper, remove in-progress class
+            messageWrapper.classList.remove('in-progress');
+            
+            // Find or create narrator message element
+            let narratorEl = messageWrapper.querySelector('.narrator-message');
+            if (narratorEl && narratorEl.classList.contains('narrator-placeholder')) {
+                // Remove placeholder class and prepare for content
+                narratorEl.classList.remove('narrator-placeholder');
+            }
+            currentNarratorMessageElement = narratorEl;
+        } else {
+            // Create new wrapper for side buttons + message
+            messageWrapper = document.createElement('div');
+            messageWrapper.className = 'assistant-turn-wrapper';
+            
+            // Create side buttons container
+            const sideButtons = document.createElement('div');
+            sideButtons.className = 'assistant-side-buttons';
+            messageWrapper.appendChild(sideButtons);
+            
+            currentNarratorMessageElement = document.createElement('div');
+            currentNarratorMessageElement.className = 'message narrator-message';
+            
+            messageWrapper.appendChild(currentNarratorMessageElement);
+            chatHistory.appendChild(messageWrapper);
         }
         
-        // Split tool calls into dice rolls and other tools
-        const { diceRolls, otherTools } = splitToolCalls(currentTurnToolCalls);
-        
-        // Add dice button if we have dice rolls
-        if (diceRolls.length > 0) {
-            const diceBtn = createDiceButton(diceRolls, false);
-            sideButtons.appendChild(diceBtn);
-        }
-        
-        // Add tool calls button if we have other tool calls
-        if (otherTools.length > 0) {
-            const toolBtn = createToolButton(otherTools, false);
-            sideButtons.appendChild(toolBtn);
-        }
-        
-        messageWrapper.appendChild(sideButtons);
-        
-        currentNarratorMessageElement = document.createElement('div');
-        currentNarratorMessageElement.className = 'message narrator-message';
         currentNarratorMessageElement.style.display = 'none'; // Hide until we get content
         
-        messageWrapper.appendChild(currentNarratorMessageElement);
-        chatHistory.appendChild(messageWrapper);
+        // Update side buttons with final (non-animated) state
+        const sideButtons = messageWrapper.querySelector('.assistant-side-buttons');
+        if (sideButtons) {
+            sideButtons.innerHTML = '';
+            
+            // Add thinking button if we have thinking content
+            if (currentTurnThinking) {
+                const thinkingBtn = createThinkingButton(currentTurnThinking, false);
+                sideButtons.appendChild(thinkingBtn);
+            }
+            
+            // Split tool calls into dice rolls and other tools
+            const { diceRolls, otherTools } = splitToolCalls(currentTurnToolCalls);
+            
+            // Add dice button if we have dice rolls
+            if (diceRolls.length > 0) {
+                const diceBtn = createDiceButton(diceRolls, false);
+                sideButtons.appendChild(diceBtn);
+            }
+            
+            // Add tool calls button if we have other tool calls
+            if (otherTools.length > 0) {
+                const toolBtn = createToolButton(otherTools, false);
+                sideButtons.appendChild(toolBtn);
+            }
+        }
     } else {
         // Retry case - update side buttons with new thinking/tools
         const wrapper = currentNarratorMessageElement.closest('.assistant-turn-wrapper');
@@ -334,7 +726,7 @@ socket.on('text_output', function(data) {
 
         // Special processing for narration tags
         // if processedContent has a start narration tag but no end, add a closing tag
-        let processedContent = accumulatedContent;
+        let processedContent = accumulatedContent.trim();
         if (processedContent.includes('<narration>') && !processedContent.includes('</narration>')) {
             processedContent += '</narration>';
         }
@@ -362,6 +754,8 @@ socket.on('text_output', function(data) {
             }
         }
         
+        // Strip leading/trailing whitespace from final HTML
+        processedContent = processedContent.trim();
         currentNarratorMessageElement.innerHTML = processedContent;
         
     }
@@ -375,6 +769,10 @@ socket.on('tool_request', function(data) {
     console.log('Tool requested:', data);
     isToolCallInProgress = true;
     accumulatedContent = '';
+    
+    // Show animated tool button while tool is being processed
+    ensureAssistantTurnWrapper();
+    updateSideButtonsAnimated();
 });
 
 socket.on('tool_submit', function(data) {
@@ -412,6 +810,10 @@ socket.on('tool_submit', function(data) {
             timestamp: new Date().toISOString()
         });
     });
+    
+    // Update side buttons to show new tool calls (still animated if more coming)
+    ensureAssistantTurnWrapper();
+    updateSideButtonsAnimated();
 });
 
 function addToolUseToHistory(data) {
@@ -434,7 +836,12 @@ function addToolUseToHistory(data) {
     });
 }
 
-socket.on('turn_end', function() {
+socket.on('turn_end', function(data) {
+    // Update cost stats if provided
+    if (data && data.cost_stats) {
+        updateCostDisplay(data.cost_stats);
+    }
+    
     // Add narrator's complete response to conversation history
     if (currentNarratorMessageElement) {
         conversationHistory.push({
@@ -497,13 +904,36 @@ socket.on('turn_end', function() {
 function addNewStory(story) {
     const li = document.createElement('li');
     li.className = 'story-item';
-    li.setAttribute('data-story', story.story_name);
+    li.setAttribute('data-story', story.story_name || story.name);
     const icon = document.createElement('i');
-    icon.className = 'fas fa-book';
-    const span = document.createElement('span');
-    span.textContent = story.story_name;
+    icon.className = 'fas fa-scroll';
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'story-item-content';
+    
+    const nameRow = document.createElement('div');
+    nameRow.className = 'story-name-row';
+    
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'story-name';
+    nameSpan.textContent = story.story_name || story.name;
+    
+    const systemSpan = document.createElement('span');
+    systemSpan.className = 'story-system';
+    systemSpan.textContent = story.system || 'unknown';
+    
+    nameRow.appendChild(nameSpan);
+    nameRow.appendChild(systemSpan);
+    
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'story-meta';
+    metaSpan.textContent = story.model || 'unknown';
+    
+    contentDiv.appendChild(nameRow);
+    contentDiv.appendChild(metaSpan);
+    
     li.appendChild(icon);
-    li.appendChild(span);
+    li.appendChild(contentDiv);
     storyList.appendChild(li);
 }
 
@@ -576,7 +1006,8 @@ function addAssistantMessageFromHistory(content) {
     narratorMessageElement.className = 'message narrator-message';
     
     // Process narration tags - parse markdown FIRST, then wrap
-    let processedContent = content;
+    // Strip leading/trailing whitespace from content
+    let processedContent = content.trim();
     
     // Check if content has narration tags
     if (processedContent.includes('<narration>')) {
@@ -601,6 +1032,8 @@ function addAssistantMessageFromHistory(content) {
         }
     }
     
+    // Strip leading/trailing whitespace from final HTML
+    processedContent = processedContent.trim();
     narratorMessageElement.innerHTML = processedContent;
     
     messageWrapper.appendChild(narratorMessageElement);
@@ -783,6 +1216,85 @@ function setupPopupBehavior(container, button, popup) {
     }
 }
 
+// Ensure assistant turn wrapper exists for animated buttons
+function ensureAssistantTurnWrapper() {
+    // If we already have a wrapper with the current narrator message, use it
+    if (currentNarratorMessageElement) {
+        return currentNarratorMessageElement.closest('.assistant-turn-wrapper');
+    }
+    
+    // Check if we already created a wrapper for this turn (before text_start)
+    const existingWrapper = chatHistory.querySelector('.assistant-turn-wrapper.in-progress');
+    if (existingWrapper) {
+        return existingWrapper;
+    }
+    
+    // Create a new wrapper
+    const messageWrapper = document.createElement('div');
+    messageWrapper.className = 'assistant-turn-wrapper in-progress';
+    
+    const sideButtons = document.createElement('div');
+    sideButtons.className = 'assistant-side-buttons';
+    messageWrapper.appendChild(sideButtons);
+    
+    // Create placeholder for narrator message (will be populated later)
+    const narratorPlaceholder = document.createElement('div');
+    narratorPlaceholder.className = 'message narrator-message narrator-placeholder';
+    narratorPlaceholder.style.display = 'none';
+    messageWrapper.appendChild(narratorPlaceholder);
+    
+    chatHistory.appendChild(messageWrapper);
+    return messageWrapper;
+}
+
+// Update side buttons with current state (animated = in progress)
+function updateSideButtonsAnimated() {
+    const wrapper = chatHistory.querySelector('.assistant-turn-wrapper.in-progress') || 
+                    (currentNarratorMessageElement && currentNarratorMessageElement.closest('.assistant-turn-wrapper'));
+    if (!wrapper) return;
+    
+    const sideButtons = wrapper.querySelector('.assistant-side-buttons');
+    if (!sideButtons) return;
+    
+    // Clear existing buttons
+    sideButtons.innerHTML = '';
+    
+    // Add thinking button if we have thinking content or thinking is in progress
+    if (currentTurnThinking || isThinkingInProgress) {
+        const thinkingBtn = createThinkingButton(currentTurnThinking || 'Thinking...', isThinkingInProgress);
+        sideButtons.appendChild(thinkingBtn);
+    }
+    
+    // Split tool calls into dice rolls and other tools
+    const { diceRolls, otherTools } = splitToolCalls(currentTurnToolCalls);
+    
+    // Add dice button if we have dice rolls
+    if (diceRolls.length > 0) {
+        const diceBtn = createDiceButton(diceRolls, isToolCallInProgress);
+        sideButtons.appendChild(diceBtn);
+    }
+    
+    // Add tool calls button if we have other tool calls or tool is in progress
+    if (otherTools.length > 0 || isToolCallInProgress) {
+        const toolBtn = createToolButton(otherTools.length > 0 ? otherTools : [], isToolCallInProgress);
+        sideButtons.appendChild(toolBtn);
+    }
+}
+
+// Update thinking popup content without recreating the button
+function updateThinkingPopupContent() {
+    const wrapper = chatHistory.querySelector('.assistant-turn-wrapper.in-progress') || 
+                    (currentNarratorMessageElement && currentNarratorMessageElement.closest('.assistant-turn-wrapper'));
+    if (!wrapper) return;
+    
+    const thinkingPopup = wrapper.querySelector('.thinking-popup .popup-content');
+    if (thinkingPopup) {
+        thinkingPopup.textContent = currentTurnThinking || 'Thinking...';
+        // Auto-scroll to bottom of popup content
+        thinkingPopup.scrollTop = thinkingPopup.scrollHeight;
+    }
+}
+
 // Create thinking button with hover popup
 function createThinkingButton(thinkingContent, isAnimating) {
     const container = document.createElement('div');
@@ -868,50 +1380,64 @@ function createToolButton(toolCalls, isAnimating) {
     
     const popupHeader = document.createElement('div');
     popupHeader.className = 'popup-header';
-    popupHeader.innerHTML = '<i class="fas fa-wrench"></i> Tool Calls (' + toolCalls.length + ')';
+    
+    // Show different header when processing vs completed
+    if (isAnimating && toolCalls.length === 0) {
+        popupHeader.innerHTML = '<i class="fas fa-wrench"></i> Processing...';
+    } else {
+        popupHeader.innerHTML = '<i class="fas fa-wrench"></i> Tool Calls (' + toolCalls.length + ')';
+    }
     
     const popupContent = document.createElement('div');
     popupContent.className = 'popup-content';
     
-    toolCalls.forEach((tool, index) => {
-        const toolItem = document.createElement('div');
-        toolItem.className = 'tool-item';
-        
-        const toolName = document.createElement('div');
-        toolName.className = 'tool-name';
-        toolName.textContent = tool.name;
-        
-        const toolDetails = document.createElement('div');
-        toolDetails.className = 'tool-details';
-        
-        // Format inputs
-        if (tool.inputs && Object.keys(tool.inputs).length > 0) {
-            const inputsDiv = document.createElement('div');
-            inputsDiv.className = 'tool-inputs';
-            inputsDiv.innerHTML = '<strong>Inputs:</strong> ' + formatToolData(tool.inputs);
-            toolDetails.appendChild(inputsDiv);
-        }
-        
-        // Format result
-        if (tool.result !== undefined) {
-            const resultDiv = document.createElement('div');
-            resultDiv.className = 'tool-result';
-            resultDiv.innerHTML = '<strong>Result:</strong> ' + formatToolData(tool.result);
-            toolDetails.appendChild(resultDiv);
-        }
-        
-        toolItem.appendChild(toolName);
-        toolItem.appendChild(toolDetails);
-        
-        popupContent.appendChild(toolItem);
-        
-        // Add separator between tools
-        if (index < toolCalls.length - 1) {
-            const separator = document.createElement('hr');
-            separator.className = 'tool-separator';
-            popupContent.appendChild(separator);
-        }
-    });
+    if (toolCalls.length === 0 && isAnimating) {
+        // Show processing message
+        const processingMsg = document.createElement('div');
+        processingMsg.className = 'tool-processing';
+        processingMsg.textContent = 'Calling tool...';
+        popupContent.appendChild(processingMsg);
+    } else {
+        toolCalls.forEach((tool, index) => {
+            const toolItem = document.createElement('div');
+            toolItem.className = 'tool-item';
+            
+            const toolName = document.createElement('div');
+            toolName.className = 'tool-name';
+            toolName.textContent = tool.name;
+            
+            const toolDetails = document.createElement('div');
+            toolDetails.className = 'tool-details';
+            
+            // Format inputs
+            if (tool.inputs && Object.keys(tool.inputs).length > 0) {
+                const inputsDiv = document.createElement('div');
+                inputsDiv.className = 'tool-inputs';
+                inputsDiv.innerHTML = '<strong>Inputs:</strong> ' + formatToolData(tool.inputs);
+                toolDetails.appendChild(inputsDiv);
+            }
+            
+            // Format result
+            if (tool.result !== undefined) {
+                const resultDiv = document.createElement('div');
+                resultDiv.className = 'tool-result';
+                resultDiv.innerHTML = '<strong>Result:</strong> ' + formatToolData(tool.result);
+                toolDetails.appendChild(resultDiv);
+            }
+            
+            toolItem.appendChild(toolName);
+            toolItem.appendChild(toolDetails);
+            
+            popupContent.appendChild(toolItem);
+            
+            // Add separator between tools
+            if (index < toolCalls.length - 1) {
+                const separator = document.createElement('hr');
+                separator.className = 'tool-separator';
+                popupContent.appendChild(separator);
+            }
+        });
+    }
     
     popup.appendChild(popupHeader);
     popup.appendChild(popupContent);
@@ -965,16 +1491,162 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Update cost display with new stats
+function updateCostDisplay(stats) {
+    if (costTotalTokens) {
+        costTotalTokens.textContent = stats.total_tokens.toLocaleString();
+    }
+    if (costAvgTokens) {
+        costAvgTokens.textContent = stats.avg_tokens_per_turn.toLocaleString();
+    }
+    if (costTotalCost) {
+        costTotalCost.textContent = '$' + stats.total_cost.toFixed(4);
+    }
+    if (costAvgCost) {
+        costAvgCost.textContent = '$' + stats.avg_cost_per_turn.toFixed(4);
+    }
+}
+
+// Cost popup hover behavior
+function setupCostPopupBehavior() {
+    if (!costButton || !costPopup) return;
+    
+    let hoverTimeout = null;
+    
+    const showCostPopup = () => {
+        clearTimeout(hoverTimeout);
+        costPopup.classList.add('visible');
+    };
+    
+    const hideCostPopup = () => {
+        hoverTimeout = setTimeout(() => {
+            costPopup.classList.remove('visible');
+        }, 100);
+    };
+    
+    // Show on hover
+    costButton.addEventListener('mouseenter', showCostPopup);
+    costButton.addEventListener('mouseleave', hideCostPopup);
+    
+    // Keep visible while hovering popup
+    costPopup.addEventListener('mouseenter', showCostPopup);
+    costPopup.addEventListener('mouseleave', hideCostPopup);
+}
+
+// Archive popup functions
+function positionArchivePopup(button) {
+    if (!archivePopup || !button) return;
+    
+    const rect = button.getBoundingClientRect();
+    const popupWidth = archivePopup.offsetWidth || 320;
+    const popupHeight = archivePopup.offsetHeight || 150;
+    
+    // Position below the button, aligned to the right
+    let top = rect.bottom + 8;
+    let left = rect.right - popupWidth;
+    
+    // If popup would go off the right edge, align to left edge of button
+    if (left < 8) {
+        left = rect.left;
+    }
+    
+    // If popup would go off the bottom, position above button instead
+    if (top + popupHeight > window.innerHeight - 8) {
+        top = rect.top - popupHeight - 8;
+    }
+    
+    archivePopup.style.top = top + 'px';
+    archivePopup.style.left = left + 'px';
+}
+
+function showArchivePopup() {
+    if (archivePopup && archiveButton) {
+        positionArchivePopup(archiveButton);
+        archivePopup.classList.add('visible');
+        // Focus the cancel button for accessibility
+        if (archivePopupCancel) {
+            setTimeout(() => archivePopupCancel.focus(), 100);
+        }
+    }
+}
+
+function hideArchivePopup() {
+    if (archivePopup) {
+        archivePopup.classList.remove('visible');
+    }
+}
+
 // Initial setup
 window.onload = function() {
     if (userInput) {
         userInput.focus();
     }
     
+    // Setup cost popup hover behavior
+    setupCostPopupBehavior();
+    
     // Add event listener for export button
     if (exportButton) {
         exportButton.addEventListener('click', exportConversation);
     }
+    
+    // Add event listener for archive button
+    if (archiveButton) {
+        archiveButton.addEventListener('click', function(e) {
+            e.stopPropagation();
+            // Toggle popup visibility
+            if (archivePopup && archivePopup.classList.contains('visible')) {
+                hideArchivePopup();
+            } else {
+                showArchivePopup();
+            }
+        });
+    }
+    
+    // Archive popup handlers
+    if (archivePopupCancel) {
+        archivePopupCancel.addEventListener('click', function(e) {
+            e.stopPropagation();
+            hideArchivePopup();
+        });
+    }
+    
+    if (archivePopupConfirm) {
+        archivePopupConfirm.addEventListener('click', function(e) {
+            e.stopPropagation();
+            socket.emit('archive_history');
+            hideArchivePopup();
+        });
+    }
+    
+    // Close popup when clicking outside
+    document.addEventListener('click', function(e) {
+        if (archivePopup && archivePopup.classList.contains('visible')) {
+            if (!archivePopup.contains(e.target) && e.target !== archiveButton) {
+                hideArchivePopup();
+            }
+        }
+    });
+    
+    // Close popup with Escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            if (archivePopup && archivePopup.classList.contains('visible')) {
+                hideArchivePopup();
+            }
+            if (selectStoryConfigModal && selectStoryConfigModal.classList.contains('show')) {
+                selectStoryConfigModal.classList.remove('show');
+                pendingStoryName = null;
+            }
+        }
+    });
+    
+    // Reposition popup on window resize
+    window.addEventListener('resize', function() {
+        if (archivePopup && archivePopup.classList.contains('visible') && archiveButton) {
+            positionArchivePopup(archiveButton);
+        }
+    });
 
     // Adaptive width for model select based on current selection text
     if (modelSelect && modelSelectMeasure) {
@@ -1038,5 +1710,33 @@ window.onload = function() {
         updateSystemSelectWidth();
         systemSelect.addEventListener('change', updateSystemSelectWidth);
         window.addEventListener('resize', () => { syncSystemMeasureStyle(); updateSystemSelectWidth(); });
+    }
+
+    // Theme toggle functionality
+    function getCurrentTheme() {
+        return document.documentElement.getAttribute('data-theme') || 'discord';
+    }
+
+    function setTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme);
+    }
+
+    function toggleTheme() {
+        const currentTheme = getCurrentTheme();
+        const newTheme = currentTheme === 'discord' ? 'gruvbox-dark' : 'discord';
+        setTheme(newTheme);
+    }
+
+    // Load saved theme from localStorage
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+        setTheme(savedTheme);
+    }
+
+    // Add event listener for theme toggle button
+    const themeToggleBtnEl = document.getElementById('theme-toggle-btn');
+    if (themeToggleBtnEl) {
+        themeToggleBtnEl.addEventListener('click', toggleTheme);
     }
 };

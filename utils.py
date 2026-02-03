@@ -1,5 +1,6 @@
 import os
 import json
+import shutil
 
 purple = '\x1b[38;2;255;0;255m'
 blue = '\x1b[38;2;0;0;255m'
@@ -55,8 +56,22 @@ def makeNewStoryDir(story_name: str, system: str, model_name: str):
             "story_name": story_name,
         }, f, indent=4)
 
-def loadStoryInfo(story_name: str) -> dict[str, str]:
-    with open(os.path.join(f"./stories/{story_name}", "info.json"), "r") as f:
+def loadStoryInfo(story_name: str, model_name: str = None, system_name: str = None) -> dict[str, str]:
+    info_path = os.path.join(f"./stories/{story_name}", "info.json")
+    if not os.path.exists(info_path):
+        # Create info.json if it doesn't exist, using provided model and system
+        if model_name and system_name:
+            story_dir = f"./stories/{story_name}"
+            os.makedirs(story_dir, exist_ok=True)
+            with open(info_path, "w") as f:
+                json.dump({
+                    "system": system_name,
+                    "model": model_name,
+                    "story_name": story_name,
+                }, f, indent=4)
+        else:
+            raise FileNotFoundError(f"info.json not found for story '{story_name}' and no model/system provided to create it")
+    with open(info_path, "r") as f:
         return json.load(f)
 
 def historyExists(story_name: str) -> bool:
@@ -74,3 +89,62 @@ def getFullStoryInstruction(system_name: str, story_name: str) -> str:
         except FileNotFoundError:
             continue
     return result
+
+# === History Archive Functions ===
+
+def getPreviousHistoryDir(story_name: str) -> str:
+    """Get the path to the previous history directory for a story."""
+    return f"./{STORIES_ROOT_DIR}/{story_name}/previous"
+
+def getNextArchiveNumber(story_name: str) -> int:
+    """Get the next available archive number (0, 1, 2...).
+    
+    Archives are numbered sequentially starting from 0.
+    0 = oldest archived, higher numbers = more recently archived.
+    """
+    prev_dir = getPreviousHistoryDir(story_name)
+    if not os.path.exists(prev_dir):
+        return 0
+    existing = [f for f in os.listdir(prev_dir) if f.endswith('.json')]
+    return len(existing)
+
+def archiveHistory(story_name: str) -> bool:
+    """Move history.json to previous/{n}.json and delete history.json.
+    
+    Returns True if archive was successful, False if no history to archive.
+    """
+    history_path = f"./{STORIES_ROOT_DIR}/{story_name}/history.json"
+    if not os.path.exists(history_path):
+        return False
+    prev_dir = getPreviousHistoryDir(story_name)
+    os.makedirs(prev_dir, exist_ok=True)
+    archive_num = getNextArchiveNumber(story_name)
+    shutil.move(history_path, f"{prev_dir}/{archive_num}.json")
+    return True
+
+def loadAllPreviousHistory(story_name: str) -> list[dict]:
+    """Load all previous history files in order (oldest first).
+    
+    Returns a flat list of all messages from all previous history files,
+    combined in chronological order (0.json first, then 1.json, etc.).
+    """
+    prev_dir = getPreviousHistoryDir(story_name)
+    if not os.path.exists(prev_dir):
+        return []
+    
+    # Get all json files and sort by number
+    files = [f for f in os.listdir(prev_dir) if f.endswith('.json')]
+    files.sort(key=lambda f: int(f.replace('.json', '')))
+    
+    all_messages = []
+    for filename in files:
+        filepath = os.path.join(prev_dir, filename)
+        try:
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+                messages = data.get('messages', [])
+                all_messages.extend(messages)
+        except (json.JSONDecodeError, IOError):
+            continue
+    
+    return all_messages

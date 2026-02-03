@@ -8,8 +8,6 @@ from model_tools import (
     read_story_file_tool_handler,
     write_story_file_tool_handler,
     append_story_file_tool_handler,
-    read_story_summary_tool_handler,
-    read_story_plan_tool_handler,
     roll_dice_tool_handler,
 )
 
@@ -25,8 +23,6 @@ def make_toolbox(story_name: str, system_name: str) -> Toolbox:
         read_story_file_tool_handler,
         write_story_file_tool_handler,
         append_story_file_tool_handler,
-        read_story_summary_tool_handler,
-        read_story_plan_tool_handler,
         roll_dice_tool_handler,
     ]
     return Toolbox(

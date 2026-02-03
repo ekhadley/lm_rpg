@@ -40,7 +40,9 @@ def select_story(data: dict[str, str]):
         print(cyan, f"selected story: '{data['selected_story']}'", endc)
     print(json.dumps(data, indent=2))
     story_name = data['selected_story']
-    story_info = loadStoryInfo(story_name)
+    model_name = data.get('model_name')
+    system_name = data.get('system_name')
+    story_info = loadStoryInfo(story_name, model_name=model_name, system_name=system_name)
     system_name = story_info.get("system")
     if not system_name or not isValidGameSystem(system_name):
         emit('error', {"message": f"Invalid or unavailable system for story '{story_name}': {system_name}"})
@@ -71,10 +73,46 @@ def create_story(data: dict[str, str]):
             emit('error', {"message": f"Invalid or unavailable system '{system}'"})
             return
         makeNewStoryDir(story_name, system, model_name)
+        emit('story_created', {
+            "story_name": story_name,
+            "system": system,
+            "model": model_name
+        })
+
+@socket.on('archive_history')
+def archive_history():
+    global narrator
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
+    story_name = narrator.story_name
+    if archiveHistory(story_name):
+        if debug(): print(cyan, f"archived history for story: '{story_name}'", endc)
+        # Clear the narrator's messages so the next user message starts fresh
+        narrator.clearMessages()
+        emit('history_archived', {"success": True})
+    else:
+        emit('error', {"message": "No history to archive"})
 
 @app.route('/')
 def index():
-    return render_template('index.html', stories=listStoryNames(), models=models, systems=listGameSystemNames())
+    stories_with_info = []
+    for story_name in listStoryNames():
+        try:
+            story_info = loadStoryInfo(story_name)
+            stories_with_info.append({
+                'name': story_name,
+                'system': story_info.get('system', 'unknown'),
+                'model': story_info.get('model', 'unknown')
+            })
+        except Exception as e:
+            # If we can't load info, still show the story
+            stories_with_info.append({
+                'name': story_name,
+                'system': 'unknown',
+                'model': 'unknown'
+            })
+    return render_template('index.html', stories=stories_with_info, models=models, systems=listGameSystemNames())
 
 if __name__ == "__main__":
     socket.run(app, port=5001)

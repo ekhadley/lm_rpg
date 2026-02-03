@@ -2,7 +2,7 @@ import os
 import json
 import importlib.util
 
-from utils import getFullStoryInstruction
+from utils import getFullStoryInstruction, loadAllPreviousHistory
 from model_tools import Toolbox
 from callbacks import WebCallbackHandler
 from openrouter import OpenRouterProvider
@@ -27,6 +27,7 @@ class Narrator:
     def __init__(self, model_name: str, story_name: str, system_name: str, socket: SocketIO):
         self.model_name: str = model_name
         self.system_name: str = system_name
+        self.story_name: str = story_name
         self.tb: Toolbox = makeNarratorToolbox(story_name, system_name)
         self.socket: SocketIO = socket
         self.system_prompt = getFullStoryInstruction(system_name, story_name)
@@ -46,6 +47,10 @@ class Narrator:
 
     def loadMessages(self) -> list[dict[str, str]] | None:
         return self.provider.loadMessages(self.story_history_path)
+    
+    def clearMessages(self):
+        """Clear all messages from the provider. Used after archiving history."""
+        self.provider.messages = []
 
     @staticmethod
     def initFromHistory(story_name: str, socket: SocketIO) -> "Narrator":
@@ -58,6 +63,13 @@ class Narrator:
         
 
     def loadStory(self):
+        # Load previous history for UI display (not sent to model)
+        previous_messages = loadAllPreviousHistory(self.story_name)
+        if previous_messages:
+            frontend_previous = self._transformMessagesForFrontend(previous_messages)
+            self.socket.emit('previous_history', frontend_previous)
+        
+        # Load live history (this populates self.provider.messages for model)
         history = self.loadMessages()
         if history is not None:
             # Transform messages from OpenRouter format (role) to frontend format (type)
@@ -68,7 +80,7 @@ class Narrator:
             self.provider.run()
             self.saveMessages()
         self.socket.emit('assistant_ready')
-        self.socket.emit('turn_end')
+        self.socket.emit('turn_end', {"cost_stats": self.provider.getCostStats()})
     
     def _transformMessagesForFrontend(self, messages: list[dict]) -> list[dict]:
         """Transform messages from OpenRouter format to frontend format"""
@@ -138,7 +150,7 @@ class Narrator:
     def handleUserMessage(self, data: dict[str, str]) -> None:
         self.provider.addUserMessage(data['message'])
         self.provider.run()
-        self.socket.emit('turn_end')
+        # turn_end is emitted by the provider's callback with cost_stats
         self.saveMessages()
 
     def __str__(self) -> str:

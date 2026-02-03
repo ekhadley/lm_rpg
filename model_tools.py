@@ -143,20 +143,6 @@ def append_story_file_tool_handler(file_name: str, contents: str, **kwargs) -> s
     if exists: return "Contents appended to file successfully."
     else: return "File created and contents added successfully."
 
-def read_story_summary_tool_handler(**kwargs) -> str:
-    """read_story_summary: Read the story summary file (story_summary.md) in the current story directory.
-    """
-    with open(f"./stories/{kwargs['story_name']}/story_summary.md", 'r') as file:
-        content = file.read()
-    return content
-
-def read_story_plan_tool_handler(**kwargs) -> str:
-    """read_story_plan: Read the story plan file, laying out the behind-the-scenes architecture of the current story.
-    """
-    with open(f"./stories/{kwargs['story_name']}/story_plan.md", 'r') as file:
-        content = file.read()
-    return content
-
 def roll_dice_tool_handler(dice: str, **kwargs) -> int:
     """roll_dice: Roll a set of dice with the given number of sides and return the sum of the rolls.
     dice (string): A string describing the set of dice to roll, of the form 'dX' or 'XdY'.

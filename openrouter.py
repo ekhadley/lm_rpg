@@ -198,8 +198,32 @@ class OpenRouterProvider():
         self.cb = callback_handler
         self.thinking_enabled = thinking_effort != "none"
         self.thinking_effort = thinking_effort
+        self.usage_history: list[dict] = []  # Track usage per turn
         
         self.addSystemMessage(system_prompt)
+    
+    def getCostStats(self) -> dict:
+        """Calculate cost statistics from usage history"""
+        if not self.usage_history:
+            return {
+                "total_tokens": 0,
+                "total_cost": 0.0,
+                "avg_tokens_per_turn": 0,
+                "avg_cost_per_turn": 0.0,
+                "turn_count": 0
+            }
+        
+        total_tokens = sum(u.get("total_tokens", 0) for u in self.usage_history)
+        total_cost = sum(u.get("cost", 0.0) for u in self.usage_history)
+        turn_count = len(self.usage_history)
+        
+        return {
+            "total_tokens": total_tokens,
+            "total_cost": total_cost,
+            "avg_tokens_per_turn": total_tokens // turn_count if turn_count > 0 else 0,
+            "avg_cost_per_turn": total_cost / turn_count if turn_count > 0 else 0.0,
+            "turn_count": turn_count
+        }
 
     def addSystemMessage(self, content: str) -> None:
         self.messages.insert(0, {
@@ -230,6 +254,13 @@ class OpenRouterProvider():
                 if "messages" in data:
                     messages = data["messages"]
                     self.messages = messages
+                    
+                    # Reconstruct usage_history from per-message usage data
+                    self.usage_history = []
+                    for msg in messages:
+                        if msg.get("role") == "assistant" and "usage" in msg:
+                            self.usage_history.append(msg["usage"])
+                    
                     return messages
         return None
 
@@ -245,128 +276,119 @@ class OpenRouterProvider():
 
     def run(self) -> None:
         currently_outputting_text = False
+        pending_tool_calls = False
         stream = self.getStream()
-        #print(orange, json.dumps(self.messages, indent=4), endc)
+        
         for event in stream:
-            #print(gray if not "tool_calls" in str(event) else red, json.dumps(event, indent=4), endc)
-            event_item = event["choices"][0]
-            delta = event_item["delta"]
+            # Capture usage from the final chunk (comes after finish_reason)
+            usage = event.get("usage")
+            if usage:
+                self.messages[-1]["usage"] = usage
+                self.usage_history.append(usage)
             
-            # Debug: Log delta keys on first event to see what fields are available
-            if debug() and not hasattr(self, '_logged_delta_keys'):
-                self._logged_delta_keys = True
-                print(f"{cyan}Delta keys in stream: {list(delta.keys())}{endc}")
-                if delta:
-                    print(f"{cyan}Full first delta: {json.dumps(delta, indent=2)}{endc}")
+            # Skip events without choices (e.g., usage-only final chunks)
+            choices = event.get("choices", [])
+            if not choices:
+                continue
+            
+            event_item = choices[0]
+            delta = event_item.get("delta", {})
+            if not delta:
+                continue
+            
+            # Initialize assistant message on first delta
             if self.messages[-1]["role"] != "assistant":
                 self.messages.append(copy.deepcopy(delta))
-                if "tool_calls" in delta: self.messages[-1]["tool_calls"] = [] # only initialize a tool calls array if it's in the delta. gets repopulated later.
+                if "tool_calls" in delta:
+                    self.messages[-1]["tool_calls"] = []
                 self.messages[-1]["reasoning"] = ""
                 self.messages[-1]["reasoning_details"] = [{}]
 
-            delta_content = delta.get("content", None)
-            if delta_content is not None and delta_content != "":
-                if delta_content != "": self.messages[-1]["content"] += delta_content
+            # Handle text content
+            delta_content = delta.get("content")
+            if delta_content:
+                self.messages[-1]["content"] += delta_content
                 if not currently_outputting_text:
-                    if debug(): print(yellow, "Assistant producing text. . .", endc)
                     currently_outputting_text = True
                 self.cb.text_output(text=delta_content)
             
-            # Check for reasoning in multiple possible locations (different models use different formats)
-            reasoning_delta = delta.get("reasoning", None)
-            
-            # GPT-5.x and other OpenAI reasoning models use reasoning_details array with text objects
-            # Format: {"reasoning_details": [{"type": "reasoning.text", "text": "...", ...}]}
+            # Handle reasoning (supports multiple formats)
+            # Anthropic models send reasoning in both delta.reasoning AND delta.reasoning_details
+            # We must use one OR the other, not both, to avoid duplication
+            reasoning_delta = None
             reasoning_details = delta.get("reasoning_details", [])
+            
             if reasoning_details and isinstance(reasoning_details, list):
                 for detail in reasoning_details:
                     if isinstance(detail, dict):
-                        # Extract text from reasoning.text type entries
-                        detail_text = detail.get("text", None)
+                        detail_text = detail.get("text")
                         if detail_text:
-                            if reasoning_delta is None:
-                                reasoning_delta = detail_text
-                            else:
-                                reasoning_delta += detail_text
-                        # Also check for summary type
+                            reasoning_delta = (reasoning_delta or "") + detail_text
                         elif detail.get("type") == "reasoning.summary":
-                            summary = detail.get("summary", None)
-                            if summary and reasoning_delta is None:
-                                reasoning_delta = summary
+                            summary = detail.get("summary")
+                            if summary:
+                                reasoning_delta = (reasoning_delta or "") + summary
                 
-                # Store the full reasoning_details for later use
                 if reasoning_details != [{}]:
                     self.messages[-1]["reasoning_details"] = reasoning_details
             
-            if reasoning_delta is not None and reasoning_delta != "":
+            # Only fall back to delta.reasoning if reasoning_details didn't provide content
+            if reasoning_delta is None:
+                reasoning_delta = delta.get("reasoning")
+            
+            if reasoning_delta:
                 self.messages[-1]["reasoning"] += reasoning_delta
                 self.cb.think_output(text=reasoning_delta)
-            elif debug() and any(k for k in delta.keys() if 'reason' in k.lower()):
-                # Debug: log if there's any reasoning-related field we might be missing
-                print(f"{orange}Potential reasoning fields in delta: {[k for k in delta.keys() if 'reason' in k.lower()]}{endc}")
-                if reasoning_details:
-                    print(f"{orange}reasoning_details content: {json.dumps(reasoning_details, indent=2)}{endc}")
 
+            # Handle tool calls
             tool_calls = delta.get("tool_calls", [])
-            assert len(tool_calls) < 2, f"Tool calls: {tool_calls}"
             for tool_call in tool_calls:
-                if "id" in tool_call: # only the first delta has the id/name. subsequent deltas are for arguments only
-                    if "tool_calls" not in self.messages[-1]: self.messages[-1]["tool_calls"] = []
+                if "id" in tool_call:
+                    if "tool_calls" not in self.messages[-1]:
+                        self.messages[-1]["tool_calls"] = []
                     self.messages[-1]["tool_calls"].append(tool_call)
-                    tool_name = tool_call["function"]["name"]
-                    self.cb.tool_request(name=tool_name, inputs={})
-                    if debug(): print(pink, f"Tool call started: {tool_name}()", endc)
+                    self.cb.tool_request(name=tool_call["function"]["name"], inputs={})
                 self.messages[-1]["tool_calls"][-1]["function"]["arguments"] += tool_call["function"]["arguments"]
             
-            finish_reason = event_item.get("finish_reason", "")
+            # Handle finish reasons
+            finish_reason = event_item.get("finish_reason")
             if finish_reason == "stop":
                 currently_outputting_text = False
-                if debug(): 
-                    print(yellow, "Assistant finished producing text.", endc)
-                    print(f"{cyan}Final event_item keys: {list(event_item.keys())}{endc}")
-                    print(f"{cyan}Final delta: {json.dumps(delta, indent=2)}{endc}")
-                    # Log reasoning status
-                    accumulated_reasoning = self.messages[-1].get("reasoning", "")
-                    print(f"{cyan}Accumulated reasoning: {len(accumulated_reasoning)} chars{endc}")
-                
-                # Check for reasoning in the final message (some models like GPT-5.x don't stream reasoning)
-                final_message = event_item.get("message", {})
-                final_reasoning = final_message.get("reasoning", None)
-                # Also check delta for reasoning in case it comes with the final chunk
-                if final_reasoning is None:
-                    final_reasoning = delta.get("reasoning", None)
-                
-                if final_reasoning and self.messages[-1].get("reasoning", "") == "":
-                    if debug(): print(f"{cyan}Found reasoning in final message (not streamed): {len(final_reasoning)} chars{endc}")
+                # Check for non-streamed reasoning in final message
+                final_reasoning = event_item.get("message", {}).get("reasoning") or delta.get("reasoning")
+                if final_reasoning and not self.messages[-1].get("reasoning"):
                     self.messages[-1]["reasoning"] = final_reasoning
                     self.cb.think_output(text=final_reasoning)
-                
-                return
+                continue  # Continue to catch usage chunk
             
             if finish_reason == "tool_calls":
-                for tool_call in self.messages[-1]["tool_calls"]:
-                    tool_name, tool_arguments, call_id = tool_call["function"]["name"], tool_call["function"]["arguments"], tool_call["id"]
-                    tool_result = self.tb.getToolResult(tool_name, tool_arguments)
-                    self.submitToolOutput(call_id, tool_result)
-                    
-                    # Parse tool_arguments if it's a JSON string so frontend receives an object
-                    parsed_arguments = tool_arguments
-                    if isinstance(tool_arguments, str) and tool_arguments:
-                        try:
-                            parsed_arguments = json.loads(tool_arguments)
-                        except json.JSONDecodeError:
-                            pass  # Keep as string if parsing fails
-                    
-                    if debug(): print(pink, f"Tool call finished: {tool_name}({truncateForDebug(tool_arguments)})", endc)
-                    self.cb.tool_submit(names=[tool_name], inputs=[parsed_arguments], results=[tool_result])
+                pending_tool_calls = True
+                continue  # Continue to catch usage chunk
+            
+        # Process pending tool calls after stream ends
+        if pending_tool_calls:
+            for tool_call in self.messages[-1]["tool_calls"]:
+                tool_name = tool_call["function"]["name"]
+                tool_arguments = tool_call["function"]["arguments"]
+                call_id = tool_call["id"]
+                
+                tool_result = self.tb.getToolResult(tool_name, tool_arguments)
+                self.submitToolOutput(call_id, tool_result)
+                
+                parsed_arguments = tool_arguments
+                if isinstance(tool_arguments, str) and tool_arguments:
+                    try:
+                        parsed_arguments = json.loads(tool_arguments)
+                    except json.JSONDecodeError:
+                        pass
+                
+                self.cb.tool_submit(names=[tool_name], inputs=[parsed_arguments], results=[tool_result])
 
-                #print(orange, json.dumps(self.messages, indent=4), endc)
-                self.run()
-                return
+            self.run()
+            return
 
-        #print(orange, json.dumps(self.messages, indent=4), endc)
         stream.close()
-        self.cb.turn_end()
+        self.cb.turn_end(cost_stats=self.getCostStats())
 
     def submitToolCall(self, tool_name: str, tool_arguments: dict, tool_call_id: str) -> None:
         self.messages.append({

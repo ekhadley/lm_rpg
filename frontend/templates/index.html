@@ -1,6 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="discord">
 <head>
+    <script>
+        // Load theme immediately to prevent flash
+        (function() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) {
+                document.documentElement.setAttribute('data-theme', savedTheme);
+            }
+        })();
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
@@ -31,40 +40,379 @@
         .chat-wrapper {
             box-shadow: none;
         }
-        /* Model and system selects below title, invisible until hover */
+        /* Model and system selects - Pill style */
         .model-select-inline {
             width: 100%;
-            padding: 6px 16px 0 16px; /* align with chat header padding */
+            padding: 8px 16px;
             background: var(--discord-dark);
             display: flex;
-            gap: 12px;
+            gap: 8px;
             align-items: center;
         }
-        .model-select, .system-select {
-            display: inline-block;
-            width: auto;
-            max-width: none;
-            background-color: transparent;
+        
+        .select-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--discord-darker);
+            border-radius: 20px;
+            padding: 6px 8px 6px 8px;
+            border: 1px solid var(--discord-border);
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: visible;
+        }
+        
+        .select-pill .custom-select-dropdown {
+            left: 50%;
+            transform: translateX(-50%) translateY(-8px);
+            min-width: max-content;
+            width: max-content;
+        }
+        
+        .select-pill .custom-select-dropdown.show {
+            transform: translateX(-50%) translateY(0);
+        }
+        
+        .select-pill:hover {
+            border-color: var(--discord-accent);
+            background: rgba(88, 101, 242, 0.1);
+        }
+        
+        .select-pill i {
+            color: var(--discord-text-muted);
+            font-size: 0.75rem;
+            flex-shrink: 0;
+            transition: color 0.2s ease;
+        }
+        
+        .select-pill:hover i {
+            color: var(--discord-accent);
+        }
+        
+        /* Custom Select Wrapper */
+        .custom-select-wrapper {
+            position: static;
+            flex: 1;
+            min-width: 80px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .custom-select {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: transparent;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            user-select: none;
+            width: 100%;
+        }
+        
+        .custom-select:hover {
+            background: transparent;
+        }
+        
+        .custom-select.active {
+            background: transparent;
+        }
+        
+        .custom-select.disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        
+        .custom-select-value {
             color: var(--discord-text-normal);
-            border: 1px solid transparent;
+            font-size: 0.85rem;
+            flex: 1;
+        }
+        
+        .custom-select-arrow {
+            color: var(--discord-text-muted);
+            font-size: 0.7rem;
+            margin-left: 6px;
+            transition: transform 0.2s ease, color 0.2s ease;
+        }
+        
+        .select-pill:hover .custom-select-arrow {
+            color: var(--discord-accent);
+        }
+        
+        .custom-select.active .custom-select-arrow {
+            transform: rotate(180deg);
+            color: var(--discord-accent);
+        }
+        
+        /* Custom Dropdown */
+        .custom-select-dropdown {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            min-width: 100%;
+            background: var(--discord-darkest);
+            border: 1px solid var(--discord-border);
             border-radius: 6px;
-            padding: 6px 8px;
-            transition: background-color 0.15s ease, border-color 0.15s ease;
-            appearance: none;
-            -webkit-appearance: none;
-            -moz-appearance: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+            opacity: 0;
+            transform: translateY(-8px);
+            transition: opacity 0.2s ease, transform 0.2s ease;
         }
-        .model-select:hover,
-        .model-select:focus,
-        .system-select:hover,
-        .system-select:focus {
-            background-color: var(--discord-darker);
+        
+        .custom-select-dropdown.show {
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .custom-select-option {
+            padding: 6px 10px;
+            color: var(--discord-text-normal);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+            line-height: 1.3;
+        }
+        
+        .custom-select-option:hover {
+            background-color: rgba(88, 101, 242, 0.2);
+            color: var(--discord-text-light);
+        }
+        
+        /* Gruvbox theme override */
+        [data-theme="gruvbox-dark"] .custom-select-option:hover {
+            background-color: rgba(131, 165, 152, 0.2);
+        }
+        
+        .custom-select-option.selected {
+            background-color: var(--discord-accent);
+            color: var(--discord-text-light);
+        }
+        
+        /* Hidden native selects */
+        .model-select, .system-select {
+            display: none;
+        }
+        
+        /* Disabled state for pills */
+        .select-pill:has(.custom-select.disabled) {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .select-pill:has(.custom-select.disabled):hover {
             border-color: var(--discord-border);
-            outline: none;
+            background: var(--discord-darker);
         }
-        .model-select:disabled,
-        .system-select:disabled {
-            pointer-events: none; /* locked-in look same as default (no hover state) */
+        
+        .select-pill:has(.custom-select.disabled) i {
+            opacity: 0.6;
+        }
+        
+        /* Story Item Meta */
+        .story-item-content {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-width: 0;
+            width: 100%;
+        }
+        
+        .story-name-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+        }
+        
+        .story-name {
+            font-weight: 500;
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .story-system {
+            font-weight: 600;
+            color: var(--discord-text-muted);
+            font-size: 0.85rem;
+            margin-left: 8px;
+            flex-shrink: 0;
+        }
+        
+        .story-meta {
+            font-size: 0.7rem;
+            color: var(--discord-text-muted);
+            margin-top: 2px;
+            text-align: left;
+            width: 100%;
+        }
+        
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 2000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        
+        .modal-overlay.show {
+            display: flex;
+            opacity: 1;
+        }
+        
+        .modal-content {
+            background: var(--discord-darkest);
+            border: 1px solid var(--discord-border);
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--discord-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h5 {
+            margin: 0;
+            color: var(--discord-text-light);
+            font-size: 1.1rem;
+        }
+        
+        .modal-close {
+            background: transparent;
+            border: none;
+            color: var(--discord-text-muted);
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 4px;
+            transition: color 0.2s ease;
+        }
+        
+        .modal-close:hover {
+            color: var(--discord-text-light);
+        }
+        
+        .modal-body {
+            padding: 20px;
+            flex: 1;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--discord-text-normal);
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        
+        .form-group .form-control {
+            width: 100%;
+            background-color: var(--discord-user-message);
+            border: 1px solid var(--discord-border);
+            border-radius: 6px;
+            color: var(--discord-text-normal);
+            padding: 10px 12px;
+            font-size: 0.9rem;
+        }
+        
+        .form-group .form-control:focus {
+            outline: none;
+            border-color: var(--discord-accent);
+        }
+        
+        .modal-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--discord-border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .btn-primary {
+            background-color: var(--discord-accent);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--discord-accent-hover);
+        }
+        
+        .btn-secondary {
+            background-color: var(--discord-darker);
+            color: var(--discord-text-normal);
+            border: 1px solid var(--discord-border);
+        }
+        
+        .btn-secondary:hover {
+            background-color: var(--discord-border);
+        }
+        
+        /* Modal dropdown styling */
+        .modal-body .custom-select-wrapper {
+            position: relative;
+        }
+        
+        .modal-body .custom-select {
+            background: var(--discord-user-message);
+            border: 1px solid var(--discord-border);
+            border-radius: 6px;
+            padding: 8px 12px;
+        }
+        
+        .modal-body .custom-select:hover {
+            border-color: var(--discord-accent);
+            background: var(--discord-darker);
+        }
+        
+        .modal-body .custom-select-value {
+            font-size: 0.9rem;
+        }
+        
+        .modal-body .custom-select-dropdown {
+            z-index: 2001;
         }
     </style>
 </head>
@@ -78,51 +426,34 @@
                     <i class="fas fa-plus"></i>
                 </button>
             </div>
-            <div class="create-story-container" id="create-story-container">
-                <input 
-                    type="text" 
-                    id="new_story_name" 
-                    class="form-control" 
-                    placeholder="Enter story name"
-                    required
-                >
-                <button id="create-story-btn" class="btn btn-primary">Create</button>
-            </div>
             <ul class="story-list" id="story-list">
                 {% for story in stories %}
-                <li class="story-item {% if session.get('story') == story %}active{% endif %}" data-story="{{ story }}">
-                    <i class="fas fa-book"></i>
-                    <span>{{ story }}</span>
+                <li class="story-item {% if session.get('story') == story.name %}active{% endif %}" data-story="{{ story.name }}">
+                    <i class="fas fa-scroll"></i>
+                    <div class="story-item-content">
+                        <div class="story-name-row">
+                            <span class="story-name">{{ story.name }}</span>
+                            <span class="story-system">{{ story.system }}</span>
+                        </div>
+                        <span class="story-meta">{{ story.model }}</span>
+                    </div>
                 </li>
                 {% endfor %}
             </ul>
+            <div class="sidebar-footer">
+                <button class="theme-toggle-btn" id="theme-toggle-btn" title="Toggle theme">
+                    <i class="fas fa-palette"></i>
+                </button>
+            </div>
         </div>
 
         <!-- Main chat area -->
         <div class="chat-wrapper">
             <div class="chat-header" id="chat-header" style="display: none;">
                 <h5 id="current-story-title"></h5>
-                <button id="export-button" class="export-button" title="Export conversation to console">
+                <button id="export-button" class="header-button export-button" title="Export conversation to console">
                     <i class="fas fa-code"></i>
                 </button>
-            </div>
-            <div class="model-select-inline" id="model-select-inline">
-                <div>
-                    <select id="system-select" class="system-select">
-                        {% for system in systems %}
-                        <option value="{{ system }}" {% if system == 'hp' %}selected{% endif %}>{{ system }}</option>
-                        {% endfor %}
-                    </select>
-                    <span id="system-select-measure" class="system-select-measure" aria-hidden="true"></span>
-                </div>
-                <div>
-                    <select id="model-select" class="model-select">
-                        {% for model in models %}
-                        <option value="{{ model }}" {% if model == 'openai/gpt-5' %}selected{% endif %}>{{ model }}</option>
-                        {% endfor %}
-                    </select>
-                    <span id="model-select-measure" class="model-select-measure" aria-hidden="true"></span>
-                </div>
             </div>
             <div class="chat-container">
                 <div id="chat-history" class="chat-history">
@@ -132,6 +463,40 @@
                 <!-- Tool operations will be displayed inline in the chat -->
 
                 <div class="input-area">
+                    <div class="input-buttons-left">
+                        <button id="archive-button" class="input-button archive-button" title="Archive current conversation">
+                            <i class="fas fa-archive"></i>
+                        </button>
+                        <div class="cost-button-container">
+                            <button id="cost-button" class="input-button cost-button" title="Cost information">
+                                <i class="fas fa-sack-dollar"></i>
+                            </button>
+                            <div id="cost-popup" class="cost-popup">
+                                <div class="cost-popup-header">
+                                    <i class="fas fa-sack-dollar"></i>
+                                    <span>Usage & Cost</span>
+                                </div>
+                                <div class="cost-popup-body">
+                                    <div class="cost-stat">
+                                        <span class="cost-label">Total Tokens</span>
+                                        <span class="cost-value" id="cost-total-tokens">0</span>
+                                    </div>
+                                    <div class="cost-stat">
+                                        <span class="cost-label">Avg Tokens/Turn</span>
+                                        <span class="cost-value" id="cost-avg-tokens">0</span>
+                                    </div>
+                                    <div class="cost-stat">
+                                        <span class="cost-label">Total Cost</span>
+                                        <span class="cost-value" id="cost-total-cost">$0.00</span>
+                                    </div>
+                                    <div class="cost-stat">
+                                        <span class="cost-label">Avg Cost/Turn</span>
+                                        <span class="cost-value" id="cost-avg-cost">$0.00</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <form id="message-form">
                         <input 
                             type="text" 
@@ -145,7 +510,145 @@
             </div>
             <div class="welcome-container" id="welcome-container">
                 <p>Select an existing story from the sidebar or create a new one to begin your adventure.</p>
-                <i class="fas fa-hat-wizard fa-3x" style="color: var(--discord-accent); opacity: 0.8; margin-bottom: 20px;"></i>
+                <i class="fas fa-dice-d20 fa-3x" style="color: var(--discord-accent); opacity: 0.8; margin-bottom: 20px;"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Story Modal -->
+    <div id="create-story-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5>Create New Story</h5>
+                <button class="modal-close" id="create-story-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="new_story_name">Story Name</label>
+                    <input 
+                        type="text" 
+                        id="new_story_name" 
+                        class="form-control" 
+                        placeholder="Enter story name"
+                        required
+                    >
+                </div>
+                <div class="form-group">
+                    <label class="select-label">System</label>
+                    <div class="custom-select-wrapper">
+                        <div class="custom-select" id="create-system-select-custom" tabindex="0">
+                            <span class="custom-select-value">hp</span>
+                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                        </div>
+                        <select id="create-system-select" class="system-select" style="display: none;">
+                            {% for system in systems %}
+                            <option value="{{ system }}" {% if system == 'hp' %}selected{% endif %}>{{ system }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="custom-select-dropdown" id="create-system-select-dropdown">
+                            {% for system in systems %}
+                            <div class="custom-select-option" data-value="{{ system }}" {% if system == 'hp' %}data-selected="true"{% endif %}>{{ system }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="select-label">Model</label>
+                    <div class="custom-select-wrapper">
+                        <div class="custom-select" id="create-model-select-custom" tabindex="0">
+                            <span class="custom-select-value">openai/gpt-5.2</span>
+                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                        </div>
+                        <select id="create-model-select" class="model-select" style="display: none;">
+                            {% for model in models %}
+                            <option value="{{ model }}" {% if model == 'openai/gpt-5' %}selected{% endif %}>{{ model }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="custom-select-dropdown" id="create-model-select-dropdown">
+                            {% for model in models %}
+                            <div class="custom-select-option" data-value="{{ model }}" {% if model == 'openai/gpt-5.2' %}data-selected="true"{% endif %}>{{ model }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="create-story-modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="create-story-btn">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Archive Confirmation Popup -->
+    <div id="archive-popup" class="archive-popup">
+        <div class="archive-popup-header">
+            <i class="fas fa-exclamation-triangle"></i>
+            <span>Archive Conversation</span>
+        </div>
+        <div class="archive-popup-body">
+            <p>Archive current conversation? This will start a fresh conversation.</p>
+        </div>
+        <div class="archive-popup-footer">
+            <button class="archive-popup-btn archive-popup-btn-cancel" id="archive-popup-cancel">Cancel</button>
+            <button class="archive-popup-btn archive-popup-btn-confirm" id="archive-popup-confirm">Archive</button>
+        </div>
+    </div>
+
+    <!-- Select Story System/Model Modal -->
+    <div id="select-story-config-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5>Configure Story</h5>
+                <button class="modal-close" id="select-story-config-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 20px; color: var(--discord-text-normal);">This story needs a system and model to be configured.</p>
+                <div class="form-group">
+                    <label class="select-label">System</label>
+                    <div class="custom-select-wrapper">
+                        <div class="custom-select" id="select-story-system-select-custom" tabindex="0">
+                            <span class="custom-select-value">hp</span>
+                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                        </div>
+                        <select id="select-story-system-select" class="system-select" style="display: none;">
+                            {% for system in systems %}
+                            <option value="{{ system }}" {% if system == 'hp' %}selected{% endif %}>{{ system }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="custom-select-dropdown" id="select-story-system-select-dropdown">
+                            {% for system in systems %}
+                            <div class="custom-select-option" data-value="{{ system }}" {% if system == 'hp' %}data-selected="true"{% endif %}>{{ system }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="select-label">Model</label>
+                    <div class="custom-select-wrapper">
+                        <div class="custom-select" id="select-story-model-select-custom" tabindex="0">
+                            <span class="custom-select-value">openai/gpt-5.2</span>
+                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                        </div>
+                        <select id="select-story-model-select" class="model-select" style="display: none;">
+                            {% for model in models %}
+                            <option value="{{ model }}" {% if model == 'openai/gpt-5.2' %}selected{% endif %}>{{ model }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="custom-select-dropdown" id="select-story-model-select-dropdown">
+                            {% for model in models %}
+                            <div class="custom-select-option" data-value="{{ model }}" {% if model == 'openai/gpt-5.2' %}data-selected="true"{% endif %}>{{ model }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="select-story-config-modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="select-story-config-btn">Continue</button>
             </div>
         </div>
     </div>
