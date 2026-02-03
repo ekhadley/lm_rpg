@@ -28,6 +28,12 @@ let currentThinkingElement = null;
 let currentStory = null;
 let lastNarratorMessageElement = null;
 
+// Track tool calls and thinking for the current assistant turn
+let currentTurnToolCalls = [];
+let currentTurnThinking = '';
+let isToolCallInProgress = false;
+let isThinkingInProgress = false;
+
 // Story selection
 if (storyList) {
     storyList.addEventListener('click', function(e) {
@@ -164,6 +170,9 @@ socket.on('conversation_history', function(history) {
     // Clear existing conversation history in UI
     conversationHistory = [];
     
+    // Queue to match tool_use with tool_result in order
+    let pendingToolUses = [];
+    
     history.forEach(function(message) {
         if (message.type === 'user') {
             if (message.content != "<|begin_conversation|>") {
@@ -172,20 +181,27 @@ socket.on('conversation_history', function(history) {
                 addUserMessage(message.content);
             }
         } else if (message.type == "tool_result") {
-            tool_call = {
-                tools: [{
-                    name: tool_name,
-                    inputs: tool_arguments,
-                    result: message.content
-                }]
+            // Match with the corresponding tool_use from the queue
+            const toolUse = pendingToolUses.shift();
+            if (toolUse) {
+                const tool_call = {
+                    tools: [{
+                        name: toolUse.name,
+                        inputs: toolUse.input,
+                        result: message.content
+                    }]
+                };
+                addToolUseToHistory(tool_call);
             }
-            addToolUseToHistory(tool_call);
         } else if (message.type === 'assistant') {
             console.log(message);
             addAssistantMessageFromHistory(message.content);
         } else if (message.type == "tool_use") {
-            tool_name = message.name,
-            tool_arguments = message.input
+            // Queue the tool use to match with its result later
+            pendingToolUses.push({
+                name: message.name,
+                input: message.input
+            });
         } else if (message.type == "thinking") {
             addThinkingFromHistory(message.content);
         } else {
@@ -210,58 +226,84 @@ socket.on('assistant_ready', function() {
 
 socket.on('think_start', function() {
     console.log('Model started thinking');
-    
-    // Create thinking dropdown container
-    currentThinkingElement = document.createElement('div');
-    currentThinkingElement.className = 'thinking-container';
-
-    // Create header
-    const thinkingHeader = document.createElement('div');
-    thinkingHeader.className = 'thinking-header';
-    
-    const thinkingLabel = document.createElement('div');
-    thinkingLabel.className = 'thinking-label';
-    thinkingLabel.innerHTML = '<i class="fas fa-brain"></i>';
-    
-    const thinkingToggle = document.createElement('div');
-    thinkingToggle.className = 'thinking-toggle';
-    thinkingToggle.innerHTML = '▼';
-    
-    thinkingHeader.appendChild(thinkingLabel);
-    thinkingHeader.appendChild(thinkingToggle);
-    
-    // Create content area
-    const thinkingContent = document.createElement('div');
-    thinkingContent.className = 'thinking-content';
-    
-    // Add click handler for toggle
-    thinkingHeader.addEventListener('click', function() {
-        const isExpanded = thinkingContent.classList.toggle('expanded');
-        thinkingToggle.classList.toggle('expanded', isExpanded);
-    });
-    
-    currentThinkingElement.appendChild(thinkingHeader);
-    currentThinkingElement.appendChild(thinkingContent);
-    chatHistory.appendChild(currentThinkingElement);
+    isThinkingInProgress = true;
+    currentTurnThinking = '';
 });
 
 socket.on('think_output', function(data) {
-    if (currentThinkingElement) {
-        const thinkingContent = currentThinkingElement.querySelector('.thinking-content');
-        thinkingContent.textContent += data.text;
-        scrollToBottom();
-    }
+    currentTurnThinking += data.text;
+    scrollToBottom();
 });
 
 socket.on('text_start', function() {
     console.log('Narrator switched to outputting text');
+    isThinkingInProgress = false;
     
     // If we're not retrying (currentNarratorMessageElement is null), create a new message element
     if (!currentNarratorMessageElement) {
+        // Create wrapper for side buttons + message
+        const messageWrapper = document.createElement('div');
+        messageWrapper.className = 'assistant-turn-wrapper';
+        
+        // Create side buttons container
+        const sideButtons = document.createElement('div');
+        sideButtons.className = 'assistant-side-buttons';
+        
+        // Add thinking button if we have thinking content
+        if (currentTurnThinking) {
+            const thinkingBtn = createThinkingButton(currentTurnThinking, false);
+            sideButtons.appendChild(thinkingBtn);
+        }
+        
+        // Split tool calls into dice rolls and other tools
+        const { diceRolls, otherTools } = splitToolCalls(currentTurnToolCalls);
+        
+        // Add dice button if we have dice rolls
+        if (diceRolls.length > 0) {
+            const diceBtn = createDiceButton(diceRolls, false);
+            sideButtons.appendChild(diceBtn);
+        }
+        
+        // Add tool calls button if we have other tool calls
+        if (otherTools.length > 0) {
+            const toolBtn = createToolButton(otherTools, false);
+            sideButtons.appendChild(toolBtn);
+        }
+        
+        messageWrapper.appendChild(sideButtons);
+        
         currentNarratorMessageElement = document.createElement('div');
         currentNarratorMessageElement.className = 'message narrator-message';
         currentNarratorMessageElement.style.display = 'none'; // Hide until we get content
-        chatHistory.appendChild(currentNarratorMessageElement);
+        
+        messageWrapper.appendChild(currentNarratorMessageElement);
+        chatHistory.appendChild(messageWrapper);
+    } else {
+        // Retry case - update side buttons with new thinking/tools
+        const wrapper = currentNarratorMessageElement.closest('.assistant-turn-wrapper');
+        if (wrapper) {
+            const sideButtons = wrapper.querySelector('.assistant-side-buttons');
+            if (sideButtons) {
+                sideButtons.innerHTML = '';
+                
+                if (currentTurnThinking) {
+                    const thinkingBtn = createThinkingButton(currentTurnThinking, false);
+                    sideButtons.appendChild(thinkingBtn);
+                }
+                
+                const { diceRolls, otherTools } = splitToolCalls(currentTurnToolCalls);
+                
+                if (diceRolls.length > 0) {
+                    const diceBtn = createDiceButton(diceRolls, false);
+                    sideButtons.appendChild(diceBtn);
+                }
+                
+                if (otherTools.length > 0) {
+                    const toolBtn = createToolButton(otherTools, false);
+                    sideButtons.appendChild(toolBtn);
+                }
+            }
+        }
     }
     
     // Remove any existing retry buttons from previous messages (only show on last message)
@@ -291,39 +333,36 @@ socket.on('text_output', function(data) {
         accumulatedContent += data.text;
 
         // Special processing for narration tags
-        // if processedContesnt has a start narration tag but no end, add a closing tag
+        // if processedContent has a start narration tag but no end, add a closing tag
         let processedContent = accumulatedContent;
         if (processedContent.includes('<narration>') && !processedContent.includes('</narration>')) {
             processedContent += '</narration>';
         }
-        processedContent = processedContent.replace(/<narration>(.*?)<\/narration>/gs, function(_, narrationContent) {
-            // Clean up the narration text first
-            let narrationText = narrationContent;
-            
-            // Split into paragraphs by double newlines or multiple whitespace
-            let paragraphs = narrationText.split(/\n\s*\n|\n{2,}/g);
-            
-            // Wrap each paragraph in <p> tags
-            let formattedNarration = paragraphs.map(paragraph => {
-                // Clean each paragraph of extra spaces that might appear between streamed chunks
-                let cleanParagraph = paragraph.replace(/\s+/g, ' ').trim();
-                if (cleanParagraph) {
-                    return '<p>' + cleanParagraph + '</p>';
-                }
-                return '';
-            }).join('');
-            
-            return '<div class="book-narration">' + formattedNarration + '</div>';
-        });
         
-        // Convert accumulated markdown to HTML - using the FULL accumulated content each time
-        try {
-            const formattedText = marked.parse(processedContent);
-            currentNarratorMessageElement.innerHTML = formattedText;
-        } catch (e) {
-            console.error('Error parsing markdown:', e);
-            currentNarratorMessageElement.textContent = processedContent;
+        // Check if content has narration tags
+        if (processedContent.includes('<narration>')) {
+            // Parse markdown within narration tags, then wrap in book-narration div
+            processedContent = processedContent.replace(/<narration>([\s\S]*?)<\/narration>/g, function(_, narrationContent) {
+                // Parse the markdown inside the narration tags
+                let parsedMarkdown;
+                try {
+                    parsedMarkdown = marked.parse(narrationContent);
+                } catch (e) {
+                    console.error('Error parsing narration markdown:', e);
+                    parsedMarkdown = narrationContent;
+                }
+                return '<div class="book-narration">' + parsedMarkdown + '</div>';
+            });
+        } else {
+            // No narration tags, just parse as regular markdown
+            try {
+                processedContent = marked.parse(processedContent);
+            } catch (e) {
+                console.error('Error parsing markdown:', e);
+            }
         }
+        
+        currentNarratorMessageElement.innerHTML = processedContent;
         
     }
 });
@@ -334,38 +373,63 @@ socket.on('tool_request', function(data) {
         typingIndicator.remove();
     }
     console.log('Tool requested:', data);
-    // We don't show tool requests in the UI
+    isToolCallInProgress = true;
     accumulatedContent = '';
 });
 
-socket.on('tool_submit', addToolUseToHistory);
-function addToolUseToHistory(data) {
-//socket.on('tool_submit', function(data) {
+socket.on('tool_submit', function(data) {
     accumulatedContent = '';
     const typingIndicator = document.querySelector('.typing-indicator');
     if (typingIndicator) {
         typingIndicator.remove();
     }
     console.log('Tool submitted:', data);
+    isToolCallInProgress = false;
     
-    // Display tool operations directly in chat
+    // Collect tool calls for this turn (don't display inline anymore)
     data.tools.forEach(tool => {
-        const toolElement = document.createElement('div');
-        if (tool.name === 'roll_dice') {
-            toolElement.className = 'dice-roll';
-            toolElement.innerHTML = `🎲 Rolled ${tool.inputs.dice}: <strong>${tool.result}</strong>`;
-            chatHistory.appendChild(toolElement);
-        } else {
-            toolElement.className = 'tool-message';
-            toolElement.innerHTML = `Used ${tool.name}...`;
+        // Parse inputs if it's a JSON string (from history) vs object (from streaming)
+        let inputs = tool.inputs;
+        if (typeof inputs === 'string') {
+            try {
+                inputs = JSON.parse(inputs);
+            } catch (e) {
+                inputs = {};
+            }
         }
-        chatHistory.appendChild(toolElement);
+        
+        currentTurnToolCalls.push({
+            name: tool.name,
+            inputs: inputs,
+            result: tool.result
+        });
+        
         conversationHistory.push({
             role: 'tool',
             name: tool.name,
             inputs: tool.inputs,
             result: tool.result,
             timestamp: new Date().toISOString()
+        });
+    });
+});
+
+function addToolUseToHistory(data) {
+    // Used when loading from history - collect tool calls for the message
+    data.tools.forEach(tool => {
+        let inputs = tool.inputs;
+        if (typeof inputs === 'string') {
+            try {
+                inputs = JSON.parse(inputs);
+            } catch (e) {
+                inputs = {};
+            }
+        }
+        
+        currentTurnToolCalls.push({
+            name: tool.name,
+            inputs: inputs,
+            result: tool.result
         });
     });
 }
@@ -379,6 +443,33 @@ socket.on('turn_end', function() {
             timestamp: new Date().toISOString()
         });
         
+        // Update/finalize side buttons now that we have the full content
+        const wrapper = currentNarratorMessageElement.closest('.assistant-turn-wrapper');
+        if (wrapper) {
+            const sideButtons = wrapper.querySelector('.assistant-side-buttons');
+            if (sideButtons) {
+                // Clear and rebuild buttons with final state
+                sideButtons.innerHTML = '';
+                
+                if (currentTurnThinking) {
+                    const thinkingBtn = createThinkingButton(currentTurnThinking, false);
+                    sideButtons.appendChild(thinkingBtn);
+                }
+                
+                const { diceRolls, otherTools } = splitToolCalls(currentTurnToolCalls);
+                
+                if (diceRolls.length > 0) {
+                    const diceBtn = createDiceButton(diceRolls, false);
+                    sideButtons.appendChild(diceBtn);
+                }
+                
+                if (otherTools.length > 0) {
+                    const toolBtn = createToolButton(otherTools, false);
+                    sideButtons.appendChild(toolBtn);
+                }
+            }
+        }
+        
         // Store reference to last narrator message for retry functionality
         lastNarratorMessageElement = currentNarratorMessageElement;
         
@@ -389,6 +480,13 @@ socket.on('turn_end', function() {
     currentNarratorMessageElement = null;
     currentThinkingElement = null;
     accumulatedContent = '';
+    
+    // Reset turn tracking
+    currentTurnToolCalls = [];
+    currentTurnThinking = '';
+    isToolCallInProgress = false;
+    isThinkingInProgress = false;
+    
     // Enable user input
     if (userInput) {
         userInput.disabled = false;
@@ -435,75 +533,82 @@ function addUserMessage(message, disableInput = true) {
 }
 
 function addThinkingFromHistory(thinkingContent) {
-    if (!chatHistory) return;
-    
-    // Create thinking dropdown container (reuse existing logic)
-    const thinkingElement = document.createElement('div');
-    thinkingElement.className = 'thinking-container';
-
-    // Create header
-    const thinkingHeader = document.createElement('div');
-    thinkingHeader.className = 'thinking-header';
-    
-    const thinkingLabel = document.createElement('div');
-    thinkingLabel.className = 'thinking-label';
-    thinkingLabel.innerHTML = '<i class="fas fa-brain"></i>';
-    
-    const thinkingToggle = document.createElement('div');
-    thinkingToggle.className = 'thinking-toggle';
-    thinkingToggle.innerHTML = '▼';
-    
-    thinkingHeader.appendChild(thinkingLabel);
-    thinkingHeader.appendChild(thinkingToggle);
-    
-    // Create content area
-    const thinkingContentDiv = document.createElement('div');
-    thinkingContentDiv.className = 'thinking-content';
-    thinkingContentDiv.textContent = thinkingContent;
-    
-    // Add click handler for toggle
-    thinkingHeader.addEventListener('click', function() {
-        const isExpanded = thinkingContentDiv.classList.toggle('expanded');
-        thinkingToggle.classList.toggle('expanded', isExpanded);
-    });
-    
-    thinkingElement.appendChild(thinkingHeader);
-    thinkingElement.appendChild(thinkingContentDiv);
-    chatHistory.appendChild(thinkingElement);
+    // Collect thinking for the current turn - will be displayed with the assistant message
+    currentTurnThinking = thinkingContent;
 }
 
 function addAssistantMessageFromHistory(content) {
     if (!chatHistory) return;
     
+    // Create wrapper for side buttons + message
+    const messageWrapper = document.createElement('div');
+    messageWrapper.className = 'assistant-turn-wrapper';
+    
+    // Create side buttons container
+    const sideButtons = document.createElement('div');
+    sideButtons.className = 'assistant-side-buttons';
+    
+    // Add thinking button if we have thinking content
+    if (currentTurnThinking) {
+        const thinkingBtn = createThinkingButton(currentTurnThinking, false);
+        sideButtons.appendChild(thinkingBtn);
+    }
+    
+    // Split tool calls into dice rolls and other tools
+    const { diceRolls, otherTools } = splitToolCalls(currentTurnToolCalls);
+    
+    // Add dice button if we have dice rolls
+    if (diceRolls.length > 0) {
+        const diceBtn = createDiceButton(diceRolls, false);
+        sideButtons.appendChild(diceBtn);
+    }
+    
+    // Add tool calls button if we have other tool calls
+    if (otherTools.length > 0) {
+        const toolBtn = createToolButton(otherTools, false);
+        sideButtons.appendChild(toolBtn);
+    }
+    
+    messageWrapper.appendChild(sideButtons);
+    
     // Create narrator message element
     const narratorMessageElement = document.createElement('div');
     narratorMessageElement.className = 'message narrator-message';
     
-    // Process narration tags (reuse existing logic)
+    // Process narration tags - parse markdown FIRST, then wrap
     let processedContent = content;
-    processedContent = processedContent.replace(/<narration>(.*?)<\/narration>/gs, function(_, narrationContent) {
-        let narrationText = narrationContent;
-        let paragraphs = narrationText.split(/\n\s*\n|\n{2,}/g);
-        let formattedNarration = paragraphs.map(paragraph => {
-            let cleanParagraph = paragraph.replace(/\s+/g, ' ').trim();
-            if (cleanParagraph) {
-                return '<p>' + cleanParagraph + '</p>';
-            }
-            return '';
-        }).join('');
-        return '<div class="book-narration">' + formattedNarration + '</div>';
-    });
     
-    // Convert markdown to HTML (reuse existing logic)
-    try {
-        const formattedText = marked.parse(processedContent);
-        narratorMessageElement.innerHTML = formattedText;
-    } catch (e) {
-        console.error('Error parsing markdown:', e);
-        narratorMessageElement.textContent = processedContent;
+    // Check if content has narration tags
+    if (processedContent.includes('<narration>')) {
+        // Parse markdown within narration tags, then wrap in book-narration div
+        processedContent = processedContent.replace(/<narration>([\s\S]*?)<\/narration>/g, function(_, narrationContent) {
+            // Parse the markdown inside the narration tags
+            let parsedMarkdown;
+            try {
+                parsedMarkdown = marked.parse(narrationContent);
+            } catch (e) {
+                console.error('Error parsing narration markdown:', e);
+                parsedMarkdown = narrationContent;
+            }
+            return '<div class="book-narration">' + parsedMarkdown + '</div>';
+        });
+    } else {
+        // No narration tags, just parse as regular markdown
+        try {
+            processedContent = marked.parse(processedContent);
+        } catch (e) {
+            console.error('Error parsing markdown:', e);
+        }
     }
     
-    chatHistory.appendChild(narratorMessageElement);
+    narratorMessageElement.innerHTML = processedContent;
+    
+    messageWrapper.appendChild(narratorMessageElement);
+    chatHistory.appendChild(messageWrapper);
+    
+    // Reset turn tracking after adding the message
+    currentTurnToolCalls = [];
+    currentTurnThinking = '';
 }
 
 // Export conversation history to console
@@ -571,6 +676,15 @@ function handleRetryResponse(messageElement, retryButton) {
         conversationHistory.pop();
     }
     
+    // Clear side buttons from wrapper
+    const wrapper = messageElement.closest('.assistant-turn-wrapper');
+    if (wrapper) {
+        const sideButtons = wrapper.querySelector('.assistant-side-buttons');
+        if (sideButtons) {
+            sideButtons.innerHTML = '';
+        }
+    }
+    
     // Remove current message content but keep the container
     const messageActions = messageElement.querySelector('.message-actions');
     messageElement.innerHTML = '';
@@ -581,6 +695,10 @@ function handleRetryResponse(messageElement, retryButton) {
     // Set as current narrator message element for new content
     currentNarratorMessageElement = messageElement;
     accumulatedContent = '';
+    
+    // Reset turn tracking for retry
+    currentTurnToolCalls = [];
+    currentTurnThinking = '';
     
     // Show typing indicator
     showTypingIndicator();
@@ -593,6 +711,258 @@ function scrollToBottom() {
     if (chatHistory) {
         chatHistory.scrollTop = chatHistory.scrollHeight;
     }
+}
+
+// Position popup relative to button (for fixed positioning)
+function positionPopup(button, popup) {
+    const rect = button.getBoundingClientRect();
+    const popupWidth = popup.offsetWidth || 350;
+    
+    // Position to the left of the button
+    popup.style.top = rect.top + 'px';
+    popup.style.left = (rect.left - popupWidth - 8) + 'px';
+}
+
+// Setup hover and click behavior for popup
+function setupPopupBehavior(container, button, popup) {
+    let hoverTimeout = null;
+    
+    // Position and show on hover
+    const showPopup = () => {
+        clearTimeout(hoverTimeout);
+        positionPopup(button, popup);
+        popup.classList.add('visible');
+    };
+    
+    // Hide on mouse leave (unless pinned)
+    const hidePopup = () => {
+        hoverTimeout = setTimeout(() => {
+            if (!popup.classList.contains('pinned')) {
+                popup.classList.remove('visible');
+            }
+        }, 100); // Small delay to allow moving to popup
+    };
+    
+    // Button hover
+    container.addEventListener('mouseenter', showPopup);
+    container.addEventListener('mouseleave', hidePopup);
+    
+    // Popup hover (keep visible while scrolling)
+    popup.addEventListener('mouseenter', showPopup);
+    popup.addEventListener('mouseleave', hidePopup);
+    
+    // Click to toggle pinned
+    button.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isPinned = popup.classList.toggle('pinned');
+        button.classList.toggle('pinned', isPinned);
+        
+        if (isPinned) {
+            positionPopup(button, popup);
+            popup.classList.add('visible');
+        }
+    });
+    
+    // Close pinned popup when clicking outside
+    document.addEventListener('click', (e) => {
+        if (popup.classList.contains('pinned') && 
+            !container.contains(e.target) && 
+            !popup.contains(e.target)) {
+            popup.classList.remove('pinned', 'visible');
+            button.classList.remove('pinned');
+        }
+    });
+    
+    // Reposition on chat scroll
+    if (chatHistory) {
+        chatHistory.addEventListener('scroll', () => {
+            if (popup.classList.contains('visible') || popup.classList.contains('pinned')) {
+                positionPopup(button, popup);
+            }
+        });
+    }
+}
+
+// Create thinking button with hover popup
+function createThinkingButton(thinkingContent, isAnimating) {
+    const container = document.createElement('div');
+    container.className = 'side-button-container';
+    
+    const button = document.createElement('button');
+    button.className = 'side-button thinking-button' + (isAnimating ? ' animating' : '');
+    button.innerHTML = '<i class="fas fa-brain"></i>';
+    
+    const popup = document.createElement('div');
+    popup.className = 'side-button-popup thinking-popup';
+    
+    const popupHeader = document.createElement('div');
+    popupHeader.className = 'popup-header';
+    popupHeader.innerHTML = '<i class="fas fa-brain"></i> Reasoning';
+    
+    const popupContent = document.createElement('div');
+    popupContent.className = 'popup-content';
+    popupContent.textContent = thinkingContent;
+    
+    popup.appendChild(popupHeader);
+    popup.appendChild(popupContent);
+    container.appendChild(button);
+    container.appendChild(popup);
+    
+    // Setup hover and click behavior
+    setupPopupBehavior(container, button, popup);
+    
+    return container;
+}
+
+// Create dice rolls button with hover popup
+function createDiceButton(diceRolls, isAnimating) {
+    const container = document.createElement('div');
+    container.className = 'side-button-container';
+    
+    const button = document.createElement('button');
+    button.className = 'side-button dice-button' + (isAnimating ? ' animating' : '');
+    button.innerHTML = '<i class="fas fa-dice-d20"></i>';
+    
+    const popup = document.createElement('div');
+    popup.className = 'side-button-popup dice-popup';
+    
+    const popupHeader = document.createElement('div');
+    popupHeader.className = 'popup-header';
+    popupHeader.innerHTML = '<i class="fas fa-dice-d20"></i> Dice Rolls (' + diceRolls.length + ')';
+    
+    const popupContent = document.createElement('div');
+    popupContent.className = 'popup-content';
+    
+    diceRolls.forEach((roll, index) => {
+        const rollItem = document.createElement('div');
+        rollItem.className = 'dice-roll-item';
+        
+        const diceExpr = roll.inputs.dice || roll.inputs.expression || '?';
+        rollItem.innerHTML = '<span class="dice-expr">' + escapeHtml(diceExpr) + '</span><span class="dice-arrow">→</span><span class="dice-result">' + escapeHtml(String(roll.result)) + '</span>';
+        
+        popupContent.appendChild(rollItem);
+    });
+    
+    popup.appendChild(popupHeader);
+    popup.appendChild(popupContent);
+    container.appendChild(button);
+    container.appendChild(popup);
+    
+    // Setup hover and click behavior
+    setupPopupBehavior(container, button, popup);
+    
+    return container;
+}
+
+// Create tool calls button with hover popup (excludes dice rolls)
+function createToolButton(toolCalls, isAnimating) {
+    const container = document.createElement('div');
+    container.className = 'side-button-container';
+    
+    const button = document.createElement('button');
+    button.className = 'side-button tool-button' + (isAnimating ? ' animating' : '');
+    button.innerHTML = '<i class="fas fa-wrench"></i>';
+    
+    const popup = document.createElement('div');
+    popup.className = 'side-button-popup tool-popup';
+    
+    const popupHeader = document.createElement('div');
+    popupHeader.className = 'popup-header';
+    popupHeader.innerHTML = '<i class="fas fa-wrench"></i> Tool Calls (' + toolCalls.length + ')';
+    
+    const popupContent = document.createElement('div');
+    popupContent.className = 'popup-content';
+    
+    toolCalls.forEach((tool, index) => {
+        const toolItem = document.createElement('div');
+        toolItem.className = 'tool-item';
+        
+        const toolName = document.createElement('div');
+        toolName.className = 'tool-name';
+        toolName.textContent = tool.name;
+        
+        const toolDetails = document.createElement('div');
+        toolDetails.className = 'tool-details';
+        
+        // Format inputs
+        if (tool.inputs && Object.keys(tool.inputs).length > 0) {
+            const inputsDiv = document.createElement('div');
+            inputsDiv.className = 'tool-inputs';
+            inputsDiv.innerHTML = '<strong>Inputs:</strong> ' + formatToolData(tool.inputs);
+            toolDetails.appendChild(inputsDiv);
+        }
+        
+        // Format result
+        if (tool.result !== undefined) {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'tool-result';
+            resultDiv.innerHTML = '<strong>Result:</strong> ' + formatToolData(tool.result);
+            toolDetails.appendChild(resultDiv);
+        }
+        
+        toolItem.appendChild(toolName);
+        toolItem.appendChild(toolDetails);
+        
+        popupContent.appendChild(toolItem);
+        
+        // Add separator between tools
+        if (index < toolCalls.length - 1) {
+            const separator = document.createElement('hr');
+            separator.className = 'tool-separator';
+            popupContent.appendChild(separator);
+        }
+    });
+    
+    popup.appendChild(popupHeader);
+    popup.appendChild(popupContent);
+    container.appendChild(button);
+    container.appendChild(popup);
+    
+    // Setup hover and click behavior
+    setupPopupBehavior(container, button, popup);
+    
+    return container;
+}
+
+// Helper to split tool calls into dice rolls and other tools
+function splitToolCalls(toolCalls) {
+    const diceRolls = [];
+    const otherTools = [];
+    
+    toolCalls.forEach(tool => {
+        if (tool.name === 'roll_dice') {
+            diceRolls.push(tool);
+        } else {
+            otherTools.push(tool);
+        }
+    });
+    
+    return { diceRolls, otherTools };
+}
+
+// Helper to format tool data for display
+function formatToolData(data) {
+    if (typeof data === 'string') {
+        // Truncate long strings
+        if (data.length > 200) {
+            return '<code>' + escapeHtml(data.substring(0, 200)) + '...</code>';
+        }
+        return '<code>' + escapeHtml(data) + '</code>';
+    } else if (typeof data === 'object') {
+        const jsonStr = JSON.stringify(data, null, 2);
+        if (jsonStr.length > 200) {
+            return '<code>' + escapeHtml(jsonStr.substring(0, 200)) + '...</code>';
+        }
+        return '<code>' + escapeHtml(jsonStr) + '</code>';
+    }
+    return '<code>' + escapeHtml(String(data)) + '</code>';
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // Initial setup

@@ -1,3 +1,4 @@
+#!./.venv/bin/python
 import os
 import json
 from flask_socketio import SocketIO, emit

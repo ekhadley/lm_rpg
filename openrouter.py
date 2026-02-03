@@ -5,7 +5,7 @@ import copy
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 from model_tools import Toolbox
 
@@ -251,6 +251,13 @@ class OpenRouterProvider():
             #print(gray if not "tool_calls" in str(event) else red, json.dumps(event, indent=4), endc)
             event_item = event["choices"][0]
             delta = event_item["delta"]
+            
+            # Debug: Log delta keys on first event to see what fields are available
+            if debug() and not hasattr(self, '_logged_delta_keys'):
+                self._logged_delta_keys = True
+                print(f"{cyan}Delta keys in stream: {list(delta.keys())}{endc}")
+                if delta:
+                    print(f"{cyan}Full first delta: {json.dumps(delta, indent=2)}{endc}")
             if self.messages[-1]["role"] != "assistant":
                 self.messages.append(copy.deepcopy(delta))
                 if "tool_calls" in delta: self.messages[-1]["tool_calls"] = [] # only initialize a tool calls array if it's in the delta. gets repopulated later.
@@ -265,15 +272,40 @@ class OpenRouterProvider():
                     currently_outputting_text = True
                 self.cb.text_output(text=delta_content)
             
+            # Check for reasoning in multiple possible locations (different models use different formats)
             reasoning_delta = delta.get("reasoning", None)
+            
+            # GPT-5.x and other OpenAI reasoning models use reasoning_details array with text objects
+            # Format: {"reasoning_details": [{"type": "reasoning.text", "text": "...", ...}]}
+            reasoning_details = delta.get("reasoning_details", [])
+            if reasoning_details and isinstance(reasoning_details, list):
+                for detail in reasoning_details:
+                    if isinstance(detail, dict):
+                        # Extract text from reasoning.text type entries
+                        detail_text = detail.get("text", None)
+                        if detail_text:
+                            if reasoning_delta is None:
+                                reasoning_delta = detail_text
+                            else:
+                                reasoning_delta += detail_text
+                        # Also check for summary type
+                        elif detail.get("type") == "reasoning.summary":
+                            summary = detail.get("summary", None)
+                            if summary and reasoning_delta is None:
+                                reasoning_delta = summary
+                
+                # Store the full reasoning_details for later use
+                if reasoning_details != [{}]:
+                    self.messages[-1]["reasoning_details"] = reasoning_details
+            
             if reasoning_delta is not None and reasoning_delta != "":
                 self.messages[-1]["reasoning"] += reasoning_delta
                 self.cb.think_output(text=reasoning_delta)
-            
-            reasoning_details = delta.get("reasoning_details", [{}])
-            if reasoning_details != [{}] and reasoning_details != []:
-                self.messages[-1]["reasoning_details"] = reasoning_details
-                self.messages[-1]["reasoning_details"][0]["text"] = self.messages[-1]["reasoning"]
+            elif debug() and any(k for k in delta.keys() if 'reason' in k.lower()):
+                # Debug: log if there's any reasoning-related field we might be missing
+                print(f"{orange}Potential reasoning fields in delta: {[k for k in delta.keys() if 'reason' in k.lower()]}{endc}")
+                if reasoning_details:
+                    print(f"{orange}reasoning_details content: {json.dumps(reasoning_details, indent=2)}{endc}")
 
             tool_calls = delta.get("tool_calls", [])
             assert len(tool_calls) < 2, f"Tool calls: {tool_calls}"
@@ -289,7 +321,26 @@ class OpenRouterProvider():
             finish_reason = event_item.get("finish_reason", "")
             if finish_reason == "stop":
                 currently_outputting_text = False
-                if debug(): print(yellow, "Assistant finished producing text.", endc)
+                if debug(): 
+                    print(yellow, "Assistant finished producing text.", endc)
+                    print(f"{cyan}Final event_item keys: {list(event_item.keys())}{endc}")
+                    print(f"{cyan}Final delta: {json.dumps(delta, indent=2)}{endc}")
+                    # Log reasoning status
+                    accumulated_reasoning = self.messages[-1].get("reasoning", "")
+                    print(f"{cyan}Accumulated reasoning: {len(accumulated_reasoning)} chars{endc}")
+                
+                # Check for reasoning in the final message (some models like GPT-5.x don't stream reasoning)
+                final_message = event_item.get("message", {})
+                final_reasoning = final_message.get("reasoning", None)
+                # Also check delta for reasoning in case it comes with the final chunk
+                if final_reasoning is None:
+                    final_reasoning = delta.get("reasoning", None)
+                
+                if final_reasoning and self.messages[-1].get("reasoning", "") == "":
+                    if debug(): print(f"{cyan}Found reasoning in final message (not streamed): {len(final_reasoning)} chars{endc}")
+                    self.messages[-1]["reasoning"] = final_reasoning
+                    self.cb.think_output(text=final_reasoning)
+                
                 return
             
             if finish_reason == "tool_calls":
@@ -298,8 +349,16 @@ class OpenRouterProvider():
                     tool_result = self.tb.getToolResult(tool_name, tool_arguments)
                     self.submitToolOutput(call_id, tool_result)
                     
+                    # Parse tool_arguments if it's a JSON string so frontend receives an object
+                    parsed_arguments = tool_arguments
+                    if isinstance(tool_arguments, str) and tool_arguments:
+                        try:
+                            parsed_arguments = json.loads(tool_arguments)
+                        except json.JSONDecodeError:
+                            pass  # Keep as string if parsing fails
+                    
                     if debug(): print(pink, f"Tool call finished: {tool_name}({truncateForDebug(tool_arguments)})", endc)
-                    self.cb.tool_submit(names=[tool_name], inputs=[tool_arguments], results=[tool_result])
+                    self.cb.tool_submit(names=[tool_name], inputs=[parsed_arguments], results=[tool_result])
 
                 #print(orange, json.dumps(self.messages, indent=4), endc)
                 self.run()

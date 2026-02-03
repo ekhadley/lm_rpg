@@ -239,8 +239,9 @@ body {
     border-radius: 12px;
     margin-left: 0;
     margin-right: 0;
+    margin-bottom: 0; /* Remove bottom margin since wrapper handles spacing */
     position: relative;
-    width: 100%;
+    flex: 1;
     font-family: var(--font-primary);
     font-size: 1rem;
     line-height: 1.5;
@@ -267,6 +268,89 @@ body {
     margin-bottom: 0;
 }
 
+/* Markdown styling inside narrator messages */
+.narrator-message hr {
+    border: none;
+    border-top: 1px solid var(--discord-border);
+    margin: 1.5em 0;
+}
+
+.narrator-message strong {
+    color: var(--discord-text-normal);
+    font-weight: 600;
+}
+
+.narrator-message em {
+    color: var(--discord-text-normal);
+    font-style: italic;
+}
+
+.narrator-message code {
+    background-color: var(--discord-darker);
+    padding: 0.2em 0.4em;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+.narrator-message pre {
+    background-color: var(--discord-darker);
+    padding: 1em;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 1em 0;
+}
+
+.narrator-message pre code {
+    background-color: transparent;
+    padding: 0;
+}
+
+.narrator-message blockquote {
+    border-left: 3px solid var(--discord-accent);
+    margin: 1em 0;
+    padding-left: 1em;
+    color: var(--discord-text-muted);
+    font-style: italic;
+}
+
+.narrator-message ul,
+.narrator-message ol {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+}
+
+.narrator-message li {
+    margin-bottom: 0.25em;
+}
+
+.narrator-message h1,
+.narrator-message h2,
+.narrator-message h3,
+.narrator-message h4,
+.narrator-message h5,
+.narrator-message h6 {
+    color: var(--discord-text-light);
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+}
+
+.narrator-message h1 { font-size: 1.5em; }
+.narrator-message h2 { font-size: 1.3em; }
+.narrator-message h3 { font-size: 1.15em; }
+.narrator-message h4 { font-size: 1.05em; }
+.narrator-message h5 { font-size: 1em; }
+.narrator-message h6 { font-size: 0.95em; }
+
+.narrator-message a {
+    color: var(--discord-accent);
+    text-decoration: none;
+}
+
+.narrator-message a:hover {
+    text-decoration: underline;
+}
+
 /* Special styling for narration tags */
 .book-narration {
     font-family: 'EB Garamond', Georgia, serif;
@@ -290,20 +374,30 @@ body {
     text-indent: 1.5em;
 }
 
+/* Markdown styling inside book narration */
+.book-narration hr {
+    border: none;
+    border-top: 1px solid rgba(224, 224, 224, 0.3);
+    margin: 1.5em 0;
+}
+
+.book-narration strong {
+    font-weight: 600;
+}
+
+.book-narration em {
+    font-style: italic;
+}
+
 /* Add some subtle styling to make it look more book-like */
 .book-narration::first-letter {
     font-size: 1.3em;
     font-weight: 500;
 }
 
-/* Tool Messages in Chat */
+/* Tool Messages in Chat - Hidden since we use side buttons now */
 .tool-message {
-    color: var(--discord-accent);
-    font-size: 0.9rem;
-    font-style: italic;
-    padding: 5px 0;
-    margin-bottom: 8px;
-    text-align: center;
+    display: none;
 }
 
 /* Message Actions (Retry Button) */
@@ -344,78 +438,252 @@ body {
     cursor: not-allowed;
 }
 
-/* Thinking Dropdown */
-.thinking-container {
-    margin: 8px 0;
-    border: 1px solid var(--discord-border);
-    border-radius: 8px;
-    background-color: var(--discord-darker);
+/* Assistant Turn Wrapper - contains side buttons and message */
+.assistant-turn-wrapper {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 1rem;
+    width: 100%;
 }
 
-.thinking-header {
-    padding: 8px 12px;
+/* Side Buttons Container */
+.assistant-side-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-shrink: 0;
+    padding-top: 8px;
+}
+
+/* Side Button Container (for positioning popup) */
+.side-button-container {
+    position: relative;
+}
+
+/* Side Buttons */
+.side-button {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    background-color: var(--discord-darker);
+    color: var(--discord-text-muted);
     cursor: pointer;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    background-color: var(--discord-darker);
-    border-radius: 8px;
-    transition: background-color 0.2s ease;
+    justify-content: center;
+    font-size: 0.75rem;
+    transition: all 0.2s ease;
 }
 
-.thinking-header:hover {
+.side-button:hover {
     background-color: var(--discord-border);
+    color: var(--discord-accent);
 }
 
-.thinking-label {
-    color: var(--discord-text-muted);
+.side-button.thinking-button i {
+    color: var(--discord-accent);
+}
+
+.side-button.dice-button i {
+    color: var(--discord-success);
+}
+
+.side-button.tool-button i {
+    color: var(--discord-warning);
+}
+
+/* Animated state for in-progress operations */
+.side-button.animating {
+    animation: pulse-glow 1.5s infinite ease-in-out;
+}
+
+.side-button.animating i {
+    animation: spin-slow 2s infinite linear;
+}
+
+@keyframes pulse-glow {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(88, 101, 242, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 8px 2px rgba(88, 101, 242, 0.6);
+    }
+}
+
+@keyframes spin-slow {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Side Button Popup */
+.side-button-popup {
+    position: fixed;
+    width: 350px;
+    max-height: 400px;
+    background-color: var(--discord-darkest);
+    border: 1px solid var(--discord-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    overflow: hidden;
+}
+
+.side-button-popup.visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.side-button-popup.pinned {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+/* Pinned indicator on button */
+.side-button.pinned {
+    background-color: var(--discord-border);
+    box-shadow: 0 0 0 2px var(--discord-accent);
+}
+
+.popup-header {
+    padding: 10px 12px;
+    background-color: var(--discord-darker);
+    border-bottom: 1px solid var(--discord-border);
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: 600;
+    color: var(--discord-text-normal);
     display: flex;
     align-items: center;
+    gap: 8px;
 }
 
-.thinking-label i {
-    margin-right: 6px;
+.popup-header i {
     color: var(--discord-accent);
 }
 
-.thinking-toggle {
-    color: var(--discord-text-muted);
-    font-size: 0.75rem;
-    transition: transform 0.2s ease;
+.thinking-popup .popup-header i {
+    color: var(--discord-accent);
 }
 
-.thinking-toggle.expanded {
-    transform: rotate(180deg);
+.tool-popup .popup-header i {
+    color: var(--discord-warning);
 }
 
-.thinking-content {
+.dice-popup .popup-header i {
+    color: var(--discord-success);
+}
+
+.dice-popup {
+    width: 120px;
+}
+
+.popup-content {
     padding: 12px;
-    border-top: 1px solid var(--discord-border);
-    background-color: var(--discord-darkest);
-    font-family: 'Courier New', monospace;
+    max-height: 340px;
+    overflow-y: auto;
     font-size: 0.8rem;
     color: var(--discord-text-muted);
+    line-height: 1.5;
+}
+
+/* Thinking popup content */
+.thinking-popup .popup-content {
     white-space: pre-wrap;
-    max-height: 300px;
-    overflow-y: auto;
-    display: none;
-    line-height: 1.4;
+    font-family: 'Courier New', monospace;
 }
 
-.thinking-content.expanded {
-    display: block;
+/* Tool popup content */
+.tool-item {
+    margin-bottom: 8px;
 }
 
+.tool-item:last-child {
+    margin-bottom: 0;
+}
+
+.tool-name {
+    font-weight: 600;
+    color: var(--discord-warning);
+    margin-bottom: 4px;
+    font-size: 0.85rem;
+}
+
+.tool-details {
+    padding-left: 8px;
+    border-left: 2px solid var(--discord-border);
+}
+
+.tool-inputs,
+.tool-result {
+    margin-bottom: 4px;
+    word-break: break-word;
+}
+
+.tool-inputs code,
+.tool-result code {
+    background-color: var(--discord-darker);
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 0.75rem;
+}
+
+.tool-separator {
+    border: none;
+    border-top: 1px solid var(--discord-border);
+    margin: 10px 0;
+}
+
+/* Dice roll display in popup */
+.dice-roll-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    background-color: rgba(67, 181, 129, 0.1);
+    border-radius: 6px;
+    margin-bottom: 6px;
+}
+
+.dice-roll-item:last-child {
+    margin-bottom: 0;
+}
+
+.dice-expr {
+    font-family: 'Courier New', monospace;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--discord-text-light);
+    background-color: var(--discord-darker);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.dice-arrow {
+    color: var(--discord-text-muted);
+    margin: 0 6px;
+    font-size: 0.75rem;
+}
+
+.dice-result {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--discord-success);
+}
+
+/* Dice rolls now shown in tool popup */
 .dice-roll {
-    /*background-color: rgba(88, 101, 242, 0.1);*/
-    color: var(--discord-accent);
-    padding: 8px 12px;
-    border-radius: 8px;
-    font-weight: 500;
-    text-align: center;
-    margin: 8px 0;
+    display: none;
 }
 
 /* Input Area */
@@ -538,6 +806,12 @@ body {
     .story-item i {
         margin-right: 0;
         font-size: 1.2rem;
+    }
+    
+    /* Side button popups on mobile */
+    .side-button-popup {
+        width: 90%;
+        max-width: 350px;
     }
 }
 
