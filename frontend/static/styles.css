@@ -154,17 +154,18 @@ body {
 
 .story-item .hp-logo-icon {
     display: inline-block;
-    width: 2em;
-    height: 2em;
-    background-color: #0d6efd; /* Blue for HP */
+    width: 1.5rem;
+    height: 1.5rem;
+    margin-right: 8px;
+    background-color: #d4a017; /* Classic HP gold/yellow */
     -webkit-mask-image: url('/static/hp-logo.png');
     mask-image: url('/static/hp-logo.png');
     -webkit-mask-size: contain;
     mask-size: contain;
     -webkit-mask-repeat: no-repeat;
     mask-repeat: no-repeat;
-    -webkit-mask-position: 40% center;
-    mask-position: 40% center;
+    -webkit-mask-position: center;
+    mask-position: center;
     flex-shrink: 0;
 }
 
@@ -1161,8 +1162,8 @@ body {
     
     .story-item .hp-logo-icon {
         margin-right: 0;
-        width: 2.8rem;
-        height: 2.8rem;
+        width: 1.7rem;
+        height: 1.7rem;
     }
     
     /* Side button popups on mobile */
