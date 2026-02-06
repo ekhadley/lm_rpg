@@ -4,7 +4,7 @@ import json
 import inspect
 from collections.abc import Callable
 
-from utils import *
+from utils import logger
 
 def parse_handler_metadata(func: Callable) -> dict:
     doc = inspect.getdoc(func)
@@ -67,7 +67,8 @@ class Tool:
     
     
 class Toolbox:
-    def __init__(self, handlers: list[Callable], default_kwargs: dict = {}):
+    def __init__(self, handlers: list[Callable], default_kwargs: dict | None = None):
+        default_kwargs = default_kwargs or {}
         self.tools = [Tool(handler, default_kwargs) for handler in handlers]
         self.kwargs = default_kwargs
         self.tool_map = {tool.name: tool for tool in self.tools}
@@ -103,8 +104,7 @@ class Toolbox:
 def list_story_files_tool_handler(**kwargs) -> list[str]:
     """list_files: Lists all files in the current story directory.
     """
-    files = [f for f in os.listdir(f"./stories/{kwargs['story_name']}") if ".md" in f]
-    files = [f.replace("'", "") for f in files]
+    files = [f for f in os.listdir(f"./stories/{kwargs['story_name']}") if f.endswith(".md")]
     return files
 
 def read_story_file_tool_handler(file_name: str, **kwargs) -> str:

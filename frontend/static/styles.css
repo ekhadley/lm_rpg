@@ -1,47 +1,47 @@
 /* Discord-inspired Theme */
 :root {
-    --discord-dark: #252629;         /* Darker main chat background */
-    --discord-darker: #1f2023;       /* Darker secondary elements */
-    --discord-darkest: #1e1e21;      /* Darkest elements (sidebars) */
-    --discord-light: #dcddde;
+    --discord-dark: #2b2d31;         /* Main chat background */
+    --discord-darker: #1e1f22;       /* Darker secondary elements */
+    --discord-darkest: #1a1b1e;      /* Darkest elements (sidebars) */
+    --discord-light: #e3e5e8;
     --discord-lighter: #ffffff;
     --discord-accent: #5865f2;
     --discord-accent-hover: #4752c4;
     --discord-success: #43b581;
     --discord-danger: #f04747;
     --discord-warning: #faa61a;
-    --discord-text-normal: #dcddde;
-    --discord-text-muted: #72767d;
+    --discord-text-normal: #e3e5e8;
+    --discord-text-muted: #8b8f96;
     --discord-text-light: #ffffff;
-    --discord-user-message: #383a40;  /* Darker message background */
-    --discord-assistant-message: #2c2e33; /* Darker assistant message background */
-    --discord-border: #363940;
-    --discord-sidebar: #1e1e21;      /* Sidebar now uses --discord-darkest */
-    --discord-sidebar-active: #2e3035; /* Active item is main background color */
+    --discord-user-message: #383a40;
+    --discord-assistant-message: #313338;
+    --discord-border: #3f4147;
+    --discord-sidebar: #1a1b1e;
+    --discord-sidebar-active: #35373c;
     --font-primary: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
     --sidebar-width: 260px;
 }
 
 /* Gruvbox Dark Theme */
 [data-theme="gruvbox-dark"] {
-    --discord-dark: #282828;         /* Main chat background */
+    --discord-dark: #2c2c2c;         /* Main chat background */
     --discord-darker: #1d2021;       /* Darker secondary elements */
-    --discord-darkest: #1d2021;      /* Darkest elements (sidebars) */
-    --discord-light: #ebdbb2;
+    --discord-darkest: #181919;      /* Darkest elements (sidebars) */
+    --discord-light: #f0e0b7;
     --discord-lighter: #fbf1c7;
     --discord-accent: #83a598;        /* Blue */
     --discord-accent-hover: #689d6a;  /* Green */
     --discord-success: #8ec07c;       /* Green */
     --discord-danger: #fb4934;        /* Red */
     --discord-warning: #fe8019;       /* Orange */
-    --discord-text-normal: #ebdbb2;
-    --discord-text-muted: #a89984;
+    --discord-text-normal: #f0e0b7;
+    --discord-text-muted: #bdae98;
     --discord-text-light: #fbf1c7;
-    --discord-user-message: #504945;  /* Darker message background */
-    --discord-assistant-message: #3c3836; /* Darker assistant message background */
-    --discord-border: #504945;
-    --discord-sidebar: #1d2021;      /* Sidebar */
-    --discord-sidebar-active: #3c3836; /* Active item */
+    --discord-user-message: #504945;
+    --discord-assistant-message: #3c3836;
+    --discord-border: #5a524c;
+    --discord-sidebar: #181919;
+    --discord-sidebar-active: #3c3836;
 }
 
 /* Main Layout */
@@ -741,7 +741,7 @@ body {
 /* Side Button Popup */
 .side-button-popup {
     position: fixed;
-    width: 350px;
+    width: 525px;
     max-height: 400px;
     background-color: var(--discord-darkest);
     border: 1px solid var(--discord-border);
@@ -749,7 +749,6 @@ body {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
     z-index: 1000;
     opacity: 0;
-    visibility: hidden;
     pointer-events: none;
     transition: opacity 0.2s ease;
     overflow: hidden;
@@ -757,13 +756,11 @@ body {
 
 .side-button-popup.visible {
     opacity: 1;
-    visibility: visible;
     pointer-events: auto;
 }
 
 .side-button-popup.pinned {
     opacity: 1;
-    visibility: visible;
     pointer-events: auto;
 }
 
@@ -809,9 +806,9 @@ body {
     padding: 12px;
     max-height: 340px;
     overflow-y: auto;
-    font-size: 0.8rem;
-    color: var(--discord-text-muted);
-    line-height: 1.5;
+    font-size: 0.9rem;
+    color: var(--discord-text-normal);
+    line-height: 1.6;
 }
 
 /* Thinking popup content */
@@ -1169,7 +1166,7 @@ body {
     /* Side button popups on mobile */
     .side-button-popup {
         width: 90%;
-        max-width: 350px;
+        max-width: 525px;
     }
 }
 

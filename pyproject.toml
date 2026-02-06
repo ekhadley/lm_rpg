@@ -1,14 +1,12 @@
 [project]
-name = "hp"
+name = "lm_rpg"
 version = "0.1.0"
-description = "Add your description here"
+description = "LLM-powered text RPG with pluggable game systems"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "anthropic>=0.52.2",
     "dotenv>=0.9.9",
     "flask>=3.1.1",
     "flask-socketio>=5.5.1",
-    "openai>=1.86.0",
     "requests>=2.32.5",
 ]

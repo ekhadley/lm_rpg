@@ -12,7 +12,7 @@ yellow = '\x1b[38;2;255;255;0m'
 red = '\x1b[38;2;255;0;0m'
 pink = '\x1b[38;2;255;51;204m'
 orange = '\x1b[38;2;255;51;0m'
-green = '\x1b[38;2;0;0;128m'
+green = '\x1b[38;2;0;128;0m'
 gray = '\x1b[38;2;127;127;127m'
 magenta = '\x1b[38;2;128;0;128m'
 white = '\x1b[38;2;255;255;255m'
@@ -55,19 +55,11 @@ logger = setup_logger()
 # === Constants ===
 
 STORIES_ROOT_DIR = "stories"
+STORIES_ARCHIVE_DIR = "stories/.archived"
 GAME_SYSTEMS_ROOT_DIR = "systems"
 
-def debug() -> bool:
-    return os.environ.get("DEBUG", "0").lower() == "1"
-
-def truncateForDebug(obj: object, max_length: int=200):
-    obj_str = str(obj)
-    if len(obj_str) <= max_length:
-        return repr(obj_str)
-    return repr(obj_str[:max_length] + "...")
-
 def listStoryNames() -> list[str]:
-    return sorted(os.listdir("./stories"))
+    return sorted(f for f in os.listdir("./stories") if not f.startswith('.'))
 
 def _system_has_instructions(system_name: str) -> bool:
     """Returns True only if the system has a base instructions.md file."""
@@ -90,6 +82,14 @@ def makeNewStoryDir(story_name: str, system: str, model_name: str):
             "model": model_name,
             "story_name": story_name,
         }, f, indent=4)
+
+def archiveStoryDir(story_name: str) -> bool:
+    story_dir = f"./{STORIES_ROOT_DIR}/{story_name}"
+    if not os.path.exists(story_dir):
+        return False
+    os.makedirs(f"./{STORIES_ARCHIVE_DIR}", exist_ok=True)
+    shutil.move(story_dir, f"./{STORIES_ARCHIVE_DIR}/{story_name}")
+    return True
 
 def loadStoryInfo(story_name: str, model_name: str = None, system_name: str = None) -> dict[str, str]:
     info_path = os.path.join(f"./stories/{story_name}", "info.json")

@@ -2,10 +2,14 @@
 import os
 import json
 from flask_socketio import SocketIO, emit
-from flask import Flask, render_template
+from flask import Flask, render_template, redirect, url_for
 from narrator import Narrator
 
-from utils import *
+from utils import (
+    logger, listStoryNames, loadStoryInfo, makeNewStoryDir,
+    historyExists, isValidGameSystem, listGameSystemNames,
+    archiveHistory, copyStory, archiveStoryDir,
+)
 
 app = Flask(__name__, template_folder="frontend/templates", static_folder="frontend/static")
 app.secret_key = os.urandom(24)
@@ -124,6 +128,34 @@ def archive_history():
     else:
         emit('error', {"message": "No history to archive"})
 
+@socket.on('delete_story')
+def delete_story(data: dict[str, str]):
+    global narrator
+    story_name = data.get('story_name', '').strip()
+    if not story_name:
+        emit('error', {"message": "Story name is required"})
+        return
+    if archiveStoryDir(story_name):
+        # If the deleted story is currently loaded, clear the narrator
+        if narrator is not None and narrator.story_name == story_name:
+            narrator = None
+        logger.debug(f"archived (deleted) story: '{story_name}'")
+        emit('story_deleted', {"story_name": story_name})
+    else:
+        emit('error', {"message": f"Story '{story_name}' not found"})
+
+@socket.on('retry_last_response')
+def retry_last_response():
+    global narrator
+    assert narrator is not None, "Narrator has not been initialized."
+    messages = narrator.provider.messages
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == "user":
+            narrator.provider.messages = messages[:i + 1]
+            narrator.provider.run()
+            narrator.saveMessages()
+            return
+
 def get_stories_with_info():
     """Helper to load all stories with their info."""
     stories_with_info = []
@@ -157,7 +189,6 @@ def story_page(story_name):
     # Check if story exists
     if story_name not in listStoryNames():
         # Story doesn't exist, redirect to home
-        from flask import redirect, url_for
         return redirect(url_for('index'))
     return render_template('index.html', 
                            stories=get_stories_with_info(), 

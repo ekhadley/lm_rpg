@@ -12,7 +12,7 @@ from model_tools import Toolbox
 import callbacks
 from callbacks import CallbackHandler
 
-from utils import *
+from utils import logger
 
 class OpenRouterStream:
     """
@@ -253,7 +253,11 @@ class OpenRouterProvider():
                 if "messages" in data:
                     messages = data["messages"]
                     self.messages = messages
-                    
+
+                    # Update saved system prompt to live version
+                    if self.messages and self.messages[0].get("role") == "system":
+                        self.messages[0]["content"] = self.system_prompt
+
                     # Reconstruct usage_history from per-message usage data
                     self.usage_history = []
                     for msg in messages:
@@ -274,128 +278,134 @@ class OpenRouterProvider():
         )
 
     def run(self) -> None:
-        currently_outputting_text = False
-        pending_tool_calls = False
-        finish_reason = None
-        stream = self.getStream()
-        
-        for event in stream:
-            # Capture usage from the final chunk (comes after finish_reason)
-            usage = event.get("usage")
-            if usage:
-                self.messages[-1]["usage"] = usage
-                self.usage_history.append(usage)
-            
-            # Skip events without choices (e.g., usage-only final chunks)
-            choices = event.get("choices", [])
-            if not choices:
-                continue
-            
-            event_item = choices[0]
-            delta = event_item.get("delta", {})
-            if not delta:
-                continue
-            
-            # Initialize assistant message on first delta
-            if self.messages[-1]["role"] != "assistant":
-                self.messages.append(copy.deepcopy(delta))
-                if "tool_calls" in delta:
-                    self.messages[-1]["tool_calls"] = []
-                self.messages[-1]["reasoning"] = ""
-                self.messages[-1]["reasoning_details"] = [{}]
+        while True:
+            currently_outputting_text = False
+            pending_tool_calls = False
+            finish_reason = None
+            was_thinking = False
+            stream = self.getStream()
 
-            # Handle text content
-            delta_content = delta.get("content")
-            if delta_content:
-                self.messages[-1]["content"] += delta_content
-                if not currently_outputting_text:
-                    currently_outputting_text = True
-                self.cb.text_output(text=delta_content)
-            
-            # Handle reasoning (supports multiple formats)
-            # Anthropic models send reasoning in both delta.reasoning AND delta.reasoning_details
-            # We must use one OR the other, not both, to avoid duplication
-            reasoning_delta = None
-            reasoning_details = delta.get("reasoning_details", [])
-            
-            if reasoning_details and isinstance(reasoning_details, list):
-                for detail in reasoning_details:
-                    if isinstance(detail, dict):
-                        detail_text = detail.get("text")
-                        if detail_text:
-                            reasoning_delta = (reasoning_delta or "") + detail_text
-                        elif detail.get("type") == "reasoning.summary":
-                            summary = detail.get("summary")
-                            if summary:
-                                reasoning_delta = (reasoning_delta or "") + summary
-                
-                if reasoning_details != [{}]:
-                    self.messages[-1]["reasoning_details"] = reasoning_details
-            
-            # Only fall back to delta.reasoning if reasoning_details didn't provide content
-            if reasoning_delta is None:
-                reasoning_delta = delta.get("reasoning")
-            
-            if reasoning_delta:
-                self.messages[-1]["reasoning"] += reasoning_delta
-                self.cb.think_output(text=reasoning_delta)
+            for event in stream:
+                # Capture usage from the final chunk (comes after finish_reason)
+                usage = event.get("usage")
+                if usage:
+                    self.messages[-1]["usage"] = usage
+                    self.usage_history.append(usage)
 
-            # Handle tool calls
-            tool_calls = delta.get("tool_calls", [])
-            for tool_call in tool_calls:
-                if "id" in tool_call:
-                    if "tool_calls" not in self.messages[-1]:
+                # Skip events without choices (e.g., usage-only final chunks)
+                choices = event.get("choices", [])
+                if not choices:
+                    continue
+
+                event_item = choices[0]
+                delta = event_item.get("delta", {})
+                if not delta:
+                    continue
+
+                # Initialize assistant message on first delta
+                if self.messages[-1]["role"] != "assistant":
+                    self.messages.append(copy.deepcopy(delta))
+                    if "tool_calls" in delta:
                         self.messages[-1]["tool_calls"] = []
-                    self.messages[-1]["tool_calls"].append(tool_call)
-                    self.cb.tool_request(name=tool_call["function"]["name"], inputs={})
-                self.messages[-1]["tool_calls"][-1]["function"]["arguments"] += tool_call["function"]["arguments"]
-            
-            # Handle finish reasons
-            finish_reason = event_item.get("finish_reason")
-            if finish_reason == "stop":
-                currently_outputting_text = False
-                # Check for non-streamed reasoning in final message
-                final_reasoning = event_item.get("message", {}).get("reasoning") or delta.get("reasoning")
-                if final_reasoning and not self.messages[-1].get("reasoning"):
-                    self.messages[-1]["reasoning"] = final_reasoning
-                    self.cb.think_output(text=final_reasoning)
-                continue  # Continue to catch usage chunk
-            
-            if finish_reason == "tool_calls":
-                pending_tool_calls = True
-                continue  # Continue to catch usage chunk
-            
-        # Process pending tool calls after stream ends
-        if pending_tool_calls:
+                    self.messages[-1]["reasoning"] = ""
+                    self.messages[-1]["reasoning_details"] = [{}]
+
+                # Handle text content
+                delta_content = delta.get("content")
+                if delta_content:
+                    self.messages[-1]["content"] += delta_content
+                    if not currently_outputting_text:
+                        if was_thinking:
+                            self.cb.think_end()
+                            was_thinking = False
+                        currently_outputting_text = True
+                    self.cb.text_output(text=delta_content)
+
+                # Handle reasoning (supports multiple formats)
+                # Anthropic models send reasoning in both delta.reasoning AND delta.reasoning_details
+                # We must use one OR the other, not both, to avoid duplication
+                reasoning_delta = None
+                reasoning_details = delta.get("reasoning_details", [])
+
+                if reasoning_details and isinstance(reasoning_details, list):
+                    for detail in reasoning_details:
+                        if isinstance(detail, dict):
+                            detail_text = detail.get("text")
+                            if detail_text:
+                                reasoning_delta = (reasoning_delta or "") + detail_text
+                            elif detail.get("type") == "reasoning.summary":
+                                summary = detail.get("summary")
+                                if summary:
+                                    reasoning_delta = (reasoning_delta or "") + summary
+
+                    if reasoning_details != [{}]:
+                        self.messages[-1]["reasoning_details"] = reasoning_details
+
+                # Only fall back to delta.reasoning if reasoning_details didn't provide content
+                if reasoning_delta is None:
+                    reasoning_delta = delta.get("reasoning")
+
+                if reasoning_delta:
+                    was_thinking = True
+                    self.messages[-1]["reasoning"] += reasoning_delta
+                    self.cb.think_output(text=reasoning_delta)
+
+                # Handle tool calls
+                tool_calls = delta.get("tool_calls", [])
+                if tool_calls and was_thinking:
+                    self.cb.think_end()
+                    was_thinking = False
+                for tool_call in tool_calls:
+                    if "id" in tool_call:
+                        if "tool_calls" not in self.messages[-1]:
+                            self.messages[-1]["tool_calls"] = []
+                        self.messages[-1]["tool_calls"].append(tool_call)
+                        self.cb.tool_request(name=tool_call["function"]["name"], inputs={})
+                    self.messages[-1]["tool_calls"][-1]["function"]["arguments"] += tool_call["function"]["arguments"]
+
+                # Handle finish reasons
+                finish_reason = event_item.get("finish_reason")
+                if finish_reason == "stop":
+                    currently_outputting_text = False
+                    # Check for non-streamed reasoning in final message
+                    final_reasoning = event_item.get("message", {}).get("reasoning") or delta.get("reasoning")
+                    if final_reasoning and not self.messages[-1].get("reasoning"):
+                        self.messages[-1]["reasoning"] = final_reasoning
+                        self.cb.think_output(text=final_reasoning)
+                    continue  # Continue to catch usage chunk
+
+                if finish_reason == "tool_calls":
+                    pending_tool_calls = True
+                    continue  # Continue to catch usage chunk
+
+            stream.close()
+
+            if was_thinking:
+                self.cb.think_end()
+
+            if not pending_tool_calls:
+                break
+
+            # Process pending tool calls, then loop to handle model's response
             for tool_call in self.messages[-1]["tool_calls"]:
                 tool_name = tool_call["function"]["name"]
                 tool_arguments = tool_call["function"]["arguments"]
                 call_id = tool_call["id"]
-                
+
                 tool_result = self.tb.getToolResult(tool_name, tool_arguments)
                 self.submitToolOutput(call_id, tool_result)
-                
+
                 parsed_arguments = tool_arguments
                 if isinstance(tool_arguments, str) and tool_arguments:
                     try:
                         parsed_arguments = json.loads(tool_arguments)
                     except json.JSONDecodeError:
                         pass
-                
+
                 self.cb.tool_submit(names=[tool_name], inputs=[parsed_arguments], results=[tool_result])
 
-            self.run()
-            return
-
-        stream.close()
         self.cb.turn_end(cost_stats=self.getCostStats(), finish_reason=finish_reason)
 
-    def submitToolCall(self, tool_name: str, tool_arguments: dict, tool_call_id: str) -> None:
-        self.messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "arguments": tool_arguments,
-        })
     def submitToolOutput(self, call_id: str, tool_output: str) -> None:
         self.messages.append({
             "role": "tool",

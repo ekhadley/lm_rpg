@@ -244,10 +244,6 @@
             white-space: nowrap;
         }
         
-        .story-system {
-            display: none;
-        }
-        
         .story-meta {
             font-size: 0.7rem;
             color: var(--discord-text-muted);
@@ -342,6 +338,14 @@
         
         .context-menu-item:hover i {
             color: var(--discord-accent);
+        }
+
+        .context-menu-item.delete:hover {
+            color: var(--discord-danger);
+        }
+
+        .context-menu-item.delete:hover i {
+            color: var(--discord-danger);
         }
         
         /* Modal Styles */
@@ -532,6 +536,10 @@
                         <div class="context-menu-item" data-action="copy-story">
                             <i class="fas fa-copy"></i>
                             <span>Copy Story</span>
+                        </div>
+                        <div class="context-menu-item delete" data-action="delete-story">
+                            <i class="fas fa-trash"></i>
+                            <span>Delete Story</span>
                         </div>
                     </div>
                 </li>

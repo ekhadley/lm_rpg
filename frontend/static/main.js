@@ -46,8 +46,24 @@ const selectStoryModelSelectCustom = document.getElementById('select-story-model
 const selectStoryModelSelectDropdown = document.getElementById('select-story-model-select-dropdown');
 const selectStoryModelSelect = document.getElementById('select-story-model-select');
 
+// Copy story modal elements
+const copyStoryModal = document.getElementById('copy-story-modal');
+const copyStoryModalClose = document.getElementById('copy-story-modal-close');
+const copyStoryModalCancel = document.getElementById('copy-story-modal-cancel');
+const copyStoryBtn = document.getElementById('copy-story-btn');
+const copyStoryNameInput = document.getElementById('copy_story_name');
+const copyAllHistoryCheckbox = document.getElementById('copy_all_history');
+const copyStoryModelSelectCustom = document.getElementById('copy-story-model-select-custom');
+const copyStoryModelSelectDropdown = document.getElementById('copy-story-model-select-dropdown');
+const copyStoryModelSelect = document.getElementById('copy-story-model-select');
+
 // Store the pending story name when modal is shown
 let pendingStoryName = null;
+
+// New Story button opens create modal
+if (newStoryBtn) {
+    newStoryBtn.addEventListener('click', () => createStoryModal && createStoryModal.classList.add('show'));
+}
 
 // Custom Dropdown Functionality
 function initCustomDropdown(customSelect, dropdown, nativeSelect, selectType) {
@@ -188,6 +204,9 @@ if (document.readyState === 'loading') {
         if (selectStoryModelSelectCustom && selectStoryModelSelectDropdown && selectStoryModelSelect) {
             initCustomDropdown(selectStoryModelSelectCustom, selectStoryModelSelectDropdown, selectStoryModelSelect, 'model');
         }
+        if (copyStoryModelSelectCustom && copyStoryModelSelectDropdown && copyStoryModelSelect) {
+            initCustomDropdown(copyStoryModelSelectCustom, copyStoryModelSelectDropdown, copyStoryModelSelect, 'model');
+        }
     });
 } else {
     if (createSystemSelectCustom && createSystemSelectDropdown && createSystemSelect) {
@@ -201,6 +220,9 @@ if (document.readyState === 'loading') {
     }
     if (selectStoryModelSelectCustom && selectStoryModelSelectDropdown && selectStoryModelSelect) {
         initCustomDropdown(selectStoryModelSelectCustom, selectStoryModelSelectDropdown, selectStoryModelSelect, 'model');
+    }
+    if (copyStoryModelSelectCustom && copyStoryModelSelectDropdown && copyStoryModelSelect) {
+        initCustomDropdown(copyStoryModelSelectCustom, copyStoryModelSelectDropdown, copyStoryModelSelect, 'model');
     }
 }
 
@@ -222,29 +244,77 @@ let isThinkingInProgress = false;
 // Story selection
 if (storyList) {
     storyList.addEventListener('click', function(e) {
+        // Handle ellipsis menu button click
+        const menuBtn = e.target.closest('.story-menu-btn');
+        if (menuBtn) {
+            e.stopPropagation();
+            const storyItem = menuBtn.closest('.story-item');
+            const contextMenu = storyItem.querySelector('.story-context-menu');
+            // Close any other open context menus
+            document.querySelectorAll('.story-context-menu.show').forEach(m => m.classList.remove('show'));
+            if (contextMenu) {
+                // Position relative to the button
+                const rect = menuBtn.getBoundingClientRect();
+                contextMenu.style.top = rect.bottom + 'px';
+                contextMenu.style.left = rect.left + 'px';
+                contextMenu.classList.toggle('show');
+            }
+            return;
+        }
+
+        // Handle context menu item clicks
+        const menuItem = e.target.closest('.context-menu-item');
+        if (menuItem && menuItem.dataset.action === 'copy-story') {
+            e.stopPropagation();
+            const storyItem = menuItem.closest('.story-item');
+            pendingStoryName = storyItem.getAttribute('data-story');
+            menuItem.closest('.story-context-menu').classList.remove('show');
+            if (copyStoryModal) {
+                if (copyStoryNameInput) copyStoryNameInput.value = pendingStoryName + ' (copy)';
+                copyStoryModal.classList.add('show');
+            }
+            return;
+        }
+        if (menuItem && menuItem.dataset.action === 'delete-story') {
+            e.stopPropagation();
+            const storyItem = menuItem.closest('.story-item');
+            const storyName = storyItem.getAttribute('data-story');
+            menuItem.closest('.story-context-menu').classList.remove('show');
+            if (confirm('Delete "' + storyName + '"? It will be moved to the archive.')) {
+                socket.emit('delete_story', { story_name: storyName });
+            }
+            return;
+        }
+
+        // Handle normal story selection
         let storyItem = e.target.closest('.story-item');
         if (storyItem) {
             let storyTitle = storyItem.getAttribute('data-story');
-            console.log('Selected story:', storyTitle);
-            
-            // Check if story has unknown system/model (indicates missing info.json)
-            const systemSpan = storyItem.querySelector('.story-system');
+
+            // Check if story has unknown model (indicates missing info.json)
             const modelSpan = storyItem.querySelector('.story-meta');
-            const system = systemSpan ? systemSpan.textContent.trim() : '';
             const model = modelSpan ? modelSpan.textContent.trim() : '';
-            
-            if (system === 'unknown' || model === 'unknown') {
-                // Show modal to select system and model
+
+            if (model === 'unknown') {
                 pendingStoryName = storyTitle;
                 if (selectStoryConfigModal) {
                     selectStoryConfigModal.classList.add('show');
                 }
             } else {
-                // Story has info.json, proceed normally
                 selectStoryDirectly(storyTitle);
             }
         }
     });
+
+    // Close context menus when clicking outside
+    document.addEventListener('click', function() {
+        document.querySelectorAll('.story-context-menu.show').forEach(m => m.classList.remove('show'));
+    });
+}
+
+// Auto-select initial story if provided via URL
+if (window.INITIAL_STORY) {
+    selectStoryDirectly(window.INITIAL_STORY);
 }
 
 // Function to select a story directly (used when info.json exists)
@@ -254,6 +324,14 @@ function selectStoryDirectly(storyTitle) {
     // Clear chat history when switching stories
     if (document.getElementById('current-story-title')) {
         document.getElementById('current-story-title').textContent = storyTitle;
+    }
+    // Show model name under title
+    const storyItem = storyList ? storyList.querySelector('.story-item[data-story="' + storyTitle + '"]') : null;
+    const modelText = storyItem ? storyItem.querySelector('.story-meta').textContent.trim() : '';
+    const modelSubtext = document.getElementById('current-story-model');
+    if (modelSubtext) {
+        modelSubtext.textContent = modelText;
+        modelSubtext.style.display = modelText ? '' : 'none';
     }
     if (chatHistory) {
         chatHistory.innerHTML = '';
@@ -280,13 +358,8 @@ if (selectStoryConfigBtn) {
         if (storyList) {
             const storyItems = storyList.querySelectorAll('.story-item');
             storyItems.forEach(item => {
-                const storyName = item.getAttribute('data-story');
-                if (storyName === pendingStoryName) {
-                    const systemSpan = item.querySelector('.story-system');
+                if (item.getAttribute('data-story') === pendingStoryName) {
                     const modelSpan = item.querySelector('.story-meta');
-                    if (systemSpan) {
-                        systemSpan.textContent = systemName;
-                    }
                     if (modelSpan) {
                         modelSpan.textContent = modelName;
                     }
@@ -313,6 +386,12 @@ if (selectStoryConfigBtn) {
         if (document.getElementById('current-story-title')) {
             document.getElementById('current-story-title').textContent = pendingStoryName;
         }
+        // Show model name under title
+        const modelSubtext = document.getElementById('current-story-model');
+        if (modelSubtext) {
+            modelSubtext.textContent = modelName;
+            modelSubtext.style.display = modelName ? '' : 'none';
+        }
         if (chatHistory) {
             chatHistory.innerHTML = '';
         }
@@ -324,7 +403,7 @@ if (selectStoryConfigBtn) {
             chatHeader.style.display = 'flex';
         }
         showTypingIndicator();
-        
+
         pendingStoryName = null;
     });
 }
@@ -360,17 +439,12 @@ if (selectStoryConfigModal) {
 // When backend confirms/locks a model and system for this story
 socket.on('story_locked', function(data) {
     console.log('Story locked with data:', data);
-    // Update the story item in the sidebar if it had unknown system/model
+    // Update the story item in the sidebar if it had unknown model
     if (currentStory && storyList) {
         const storyItems = storyList.querySelectorAll('.story-item');
         storyItems.forEach(item => {
-            const storyName = item.getAttribute('data-story');
-            if (storyName === currentStory) {
-                const systemSpan = item.querySelector('.story-system');
+            if (item.getAttribute('data-story') === currentStory) {
                 const modelSpan = item.querySelector('.story-meta');
-                if (systemSpan && data.system_name) {
-                    systemSpan.textContent = data.system_name;
-                }
                 if (modelSpan && data.model_name) {
                     modelSpan.textContent = data.model_name;
                 }
@@ -414,6 +488,54 @@ socket.on('story_created', function(data) {
     addNewStory(data);
 });
 
+// Handle story deleted event
+socket.on('story_deleted', function(data) {
+    const storyName = data.story_name;
+    if (storyList) {
+        const item = storyList.querySelector('.story-item[data-story="' + storyName + '"]');
+        if (item) item.remove();
+    }
+    // If the deleted story was the active one, show the welcome screen
+    if (currentStory === storyName) {
+        currentStory = null;
+        if (chatHistory) chatHistory.innerHTML = '';
+        if (welcomeWrapper) welcomeWrapper.style.display = '';
+        if (chatHeader) chatHeader.style.display = 'none';
+    }
+});
+
+// Copy Story modal handlers
+function closeCopyStoryModal() {
+    if (copyStoryModal) copyStoryModal.classList.remove('show');
+}
+if (copyStoryModalClose) copyStoryModalClose.addEventListener('click', closeCopyStoryModal);
+if (copyStoryModalCancel) copyStoryModalCancel.addEventListener('click', closeCopyStoryModal);
+if (copyStoryModal) {
+    copyStoryModal.addEventListener('click', function(e) {
+        if (e.target === copyStoryModal) closeCopyStoryModal();
+    });
+}
+if (copyStoryBtn) {
+    copyStoryBtn.addEventListener('click', function() {
+        const newName = copyStoryNameInput ? copyStoryNameInput.value.trim() : '';
+        if (!newName) return;
+        if (!pendingStoryName) return;
+        const modelName = copyStoryModelSelect ? copyStoryModelSelect.value : 'openai/gpt-5.2';
+        const copyAll = copyAllHistoryCheckbox ? copyAllHistoryCheckbox.checked : false;
+        socket.emit('copy_story', {
+            source_story: pendingStoryName,
+            new_story_name: newName,
+            model_name: modelName,
+            copy_all_history: copyAll,
+        });
+        closeCopyStoryModal();
+    });
+}
+
+socket.on('story_copied', function(data) {
+    addNewStory(data);
+});
+
 // Event listeners for messaging
 if (messageForm) {
     messageForm.addEventListener('submit', function(e) {
@@ -435,52 +557,40 @@ if (messageForm) {
     });
 }
 
-// Handle previous history (archived conversations displayed before live history)
-socket.on('previous_history', function(history) {
-    console.log('Loading previous history:', history);
-    
-    if (!history || history.length === 0) return;
-    
-    // Add a visual separator/header for previous conversations
-    const separator = document.createElement('div');
-    separator.className = 'history-separator';
-    separator.innerHTML = '<span>Previous Conversations</span>';
-    chatHistory.appendChild(separator);
-    
-    // Queue to match tool_use with tool_result in order
+// Shared: render a list of history messages into the chat
+function renderHistoryMessages(messages) {
     let pendingToolUses = [];
-    
-    // Render previous messages (similar to conversation_history handler)
-    history.forEach(function(message) {
+    messages.forEach(function(message) {
         if (message.type === 'user') {
             if (message.content != "<|begin_conversation|>") {
                 addUserMessage(message.content, false);
             }
-        } else if (message.type == "tool_result") {
+        } else if (message.type === "tool_result") {
             const toolUse = pendingToolUses.shift();
             if (toolUse) {
-                const tool_call = {
-                    tools: [{
-                        name: toolUse.name,
-                        inputs: toolUse.input,
-                        result: message.content
-                    }]
-                };
-                addToolUseToHistory(tool_call);
+                addToolUseToHistory({ tools: [{ name: toolUse.name, inputs: toolUse.input, result: message.content }] });
             }
         } else if (message.type === 'assistant') {
             addAssistantMessageFromHistory(message.content);
-        } else if (message.type == "tool_use") {
-            pendingToolUses.push({
-                name: message.name,
-                input: message.input
-            });
-        } else if (message.type == "thinking") {
+        } else if (message.type === "tool_use") {
+            pendingToolUses.push({ name: message.name, input: message.input });
+        } else if (message.type === "thinking") {
             addThinkingFromHistory(message.content);
         }
     });
-    
-    // Add separator before current conversation if we had previous history
+}
+
+// Handle previous history (archived conversations displayed before live history)
+socket.on('previous_history', function(history) {
+    if (!history || history.length === 0) return;
+
+    const separator = document.createElement('div');
+    separator.className = 'history-separator';
+    separator.innerHTML = '<span>Previous Conversations</span>';
+    chatHistory.appendChild(separator);
+
+    renderHistoryMessages(history);
+
     const currentSeparator = document.createElement('div');
     currentSeparator.className = 'history-separator current';
     currentSeparator.innerHTML = '<span>Current Conversation</span>';
@@ -488,56 +598,15 @@ socket.on('previous_history', function(history) {
 });
 
 socket.on('conversation_history', function(history) {
-    console.log('Loading conversation history:', history);
-    
-    // Clear existing conversation history in UI
     conversationHistory = [];
-    
-    // Queue to match tool_use with tool_result in order
-    let pendingToolUses = [];
-    
+    renderHistoryMessages(history);
     history.forEach(function(message) {
-        if (message.type === 'user') {
-            if (message.content != "<|begin_conversation|>") {
-                addUserMessage(message.content, false);
-            } else {
-                addUserMessage(message.content);
-            }
-        } else if (message.type == "tool_result") {
-            // Match with the corresponding tool_use from the queue
-            const toolUse = pendingToolUses.shift();
-            if (toolUse) {
-                const tool_call = {
-                    tools: [{
-                        name: toolUse.name,
-                        inputs: toolUse.input,
-                        result: message.content
-                    }]
-                };
-                addToolUseToHistory(tool_call);
-            }
-        } else if (message.type === 'assistant') {
-            console.log(message);
-            addAssistantMessageFromHistory(message.content);
-        } else if (message.type == "tool_use") {
-            // Queue the tool use to match with its result later
-            pendingToolUses.push({
-                name: message.name,
-                input: message.input
-            });
-        } else if (message.type == "thinking") {
-            addThinkingFromHistory(message.content);
-        } else {
-            console.warn('Unknown message type:', message.type);
-        }
-        
         conversationHistory.push({
             role: message.type,
             content: message.content,
             timestamp: message.timestamp || new Date().toISOString()
         });
     });
-    
     scrollToBottom();
 });
 
@@ -711,53 +780,33 @@ socket.on('text_start', function() {
 // Store the raw content to avoid extra spaces
 let accumulatedContent = '';
 
-// Track the last received timestamp to prevent duplicate/out-of-order chunks
+// Shared: parse narration tags and markdown in content
+function processNarration(content) {
+    let s = content.trim();
+    if (s.includes('<narration>')) {
+        return s.replace(/<narration>([\s\S]*?)<\/narration>/g, (_, n) => {
+            try { return '<div class="book-narration">' + marked.parse(n) + '</div>'; }
+            catch (e) { return '<div class="book-narration">' + n + '</div>'; }
+        }).trim();
+    }
+    try { return marked.parse(s).trim(); }
+    catch (e) { return s; }
+}
+
 socket.on('text_output', function(data) {
     const typingIndicator = document.querySelector('.typing-indicator');
     if (typingIndicator) {
         typingIndicator.remove();
     }
-    // Show and update the narrator message
     if (currentNarratorMessageElement) {
         currentNarratorMessageElement.style.display = 'block';
-        
-        // Accumulate the raw text
         accumulatedContent += data.text;
-
-        // Special processing for narration tags
-        // if processedContent has a start narration tag but no end, add a closing tag
-        let processedContent = accumulatedContent.trim();
-        if (processedContent.includes('<narration>') && !processedContent.includes('</narration>')) {
-            processedContent += '</narration>';
+        // Close incomplete narration tag during streaming
+        let content = accumulatedContent.trim();
+        if (content.includes('<narration>') && !content.includes('</narration>')) {
+            content += '</narration>';
         }
-        
-        // Check if content has narration tags
-        if (processedContent.includes('<narration>')) {
-            // Parse markdown within narration tags, then wrap in book-narration div
-            processedContent = processedContent.replace(/<narration>([\s\S]*?)<\/narration>/g, function(_, narrationContent) {
-                // Parse the markdown inside the narration tags
-                let parsedMarkdown;
-                try {
-                    parsedMarkdown = marked.parse(narrationContent);
-                } catch (e) {
-                    console.error('Error parsing narration markdown:', e);
-                    parsedMarkdown = narrationContent;
-                }
-                return '<div class="book-narration">' + parsedMarkdown + '</div>';
-            });
-        } else {
-            // No narration tags, just parse as regular markdown
-            try {
-                processedContent = marked.parse(processedContent);
-            } catch (e) {
-                console.error('Error parsing markdown:', e);
-            }
-        }
-        
-        // Strip leading/trailing whitespace from final HTML
-        processedContent = processedContent.trim();
-        currentNarratorMessageElement.innerHTML = processedContent;
-        
+        currentNarratorMessageElement.innerHTML = processNarration(content);
     }
 });
 
@@ -931,12 +980,7 @@ function addNewStory(story) {
     nameSpan.className = 'story-name';
     nameSpan.textContent = story.story_name || story.name;
     
-    const systemSpan = document.createElement('span');
-    systemSpan.className = 'story-system';
-    systemSpan.textContent = story.system || 'unknown';
-    
     nameRow.appendChild(nameSpan);
-    nameRow.appendChild(systemSpan);
     
     const metaSpan = document.createElement('span');
     metaSpan.className = 'story-meta';
@@ -945,8 +989,25 @@ function addNewStory(story) {
     contentDiv.appendChild(nameRow);
     contentDiv.appendChild(metaSpan);
     
+    const storyName = story.story_name || story.name;
+
+    // Ellipsis menu button
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'story-menu-btn';
+    menuBtn.dataset.story = storyName;
+    menuBtn.title = 'Story options';
+    menuBtn.innerHTML = '<i class="fas fa-ellipsis-v"></i>';
+
+    // Context menu
+    const contextMenu = document.createElement('div');
+    contextMenu.className = 'story-context-menu';
+    contextMenu.dataset.story = storyName;
+    contextMenu.innerHTML = '<div class="context-menu-item" data-action="copy-story"><i class="fas fa-copy"></i><span>Copy Story</span></div><div class="context-menu-item delete" data-action="delete-story"><i class="fas fa-trash"></i><span>Delete Story</span></div>';
+
     li.appendChild(icon);
     li.appendChild(contentDiv);
+    li.appendChild(menuBtn);
+    li.appendChild(contextMenu);
     storyList.appendChild(li);
 }
 
@@ -1017,37 +1078,7 @@ function addAssistantMessageFromHistory(content) {
     // Create narrator message element
     const narratorMessageElement = document.createElement('div');
     narratorMessageElement.className = 'message narrator-message';
-    
-    // Process narration tags - parse markdown FIRST, then wrap
-    // Strip leading/trailing whitespace from content
-    let processedContent = content.trim();
-    
-    // Check if content has narration tags
-    if (processedContent.includes('<narration>')) {
-        // Parse markdown within narration tags, then wrap in book-narration div
-        processedContent = processedContent.replace(/<narration>([\s\S]*?)<\/narration>/g, function(_, narrationContent) {
-            // Parse the markdown inside the narration tags
-            let parsedMarkdown;
-            try {
-                parsedMarkdown = marked.parse(narrationContent);
-            } catch (e) {
-                console.error('Error parsing narration markdown:', e);
-                parsedMarkdown = narrationContent;
-            }
-            return '<div class="book-narration">' + parsedMarkdown + '</div>';
-        });
-    } else {
-        // No narration tags, just parse as regular markdown
-        try {
-            processedContent = marked.parse(processedContent);
-        } catch (e) {
-            console.error('Error parsing markdown:', e);
-        }
-    }
-    
-    // Strip leading/trailing whitespace from final HTML
-    processedContent = processedContent.trim();
-    narratorMessageElement.innerHTML = processedContent;
+    narratorMessageElement.innerHTML = processNarration(content);
     
     messageWrapper.appendChild(narratorMessageElement);
     chatHistory.appendChild(messageWrapper);
@@ -1162,11 +1193,27 @@ function scrollToBottom() {
 // Position popup relative to button (for fixed positioning)
 function positionPopup(button, popup) {
     const rect = button.getBoundingClientRect();
-    const popupWidth = popup.offsetWidth || 350;
-    
-    // Position to the left of the button
-    popup.style.top = rect.top + 'px';
-    popup.style.left = (rect.left - popupWidth - 8) + 'px';
+    const popupWidth = popup.offsetWidth || 525;
+    const popupHeight = popup.offsetHeight || 400;
+
+    // Center horizontally on the button
+    const centerX = rect.left + rect.width / 2;
+    let left = centerX - popupWidth / 2;
+
+    // Prefer above the button; if no space, show below
+    let top;
+    if (rect.top - popupHeight - 8 >= 8) {
+        top = rect.top - popupHeight - 8;
+    } else {
+        top = rect.bottom + 8;
+    }
+
+    // Clamp to viewport edges
+    if (left < 8) left = 8;
+    if (left + popupWidth > window.innerWidth - 8) left = window.innerWidth - popupWidth - 8;
+
+    popup.style.top = top + 'px';
+    popup.style.left = left + 'px';
 }
 
 // Setup hover and click behavior for popup
@@ -1651,6 +1698,9 @@ window.onload = function() {
                 selectStoryConfigModal.classList.remove('show');
                 pendingStoryName = null;
             }
+            if (copyStoryModal && copyStoryModal.classList.contains('show')) {
+                closeCopyStoryModal();
+            }
         }
     });
     
@@ -1660,70 +1710,6 @@ window.onload = function() {
             positionArchivePopup(archiveButton);
         }
     });
-
-    // Adaptive width for model select based on current selection text
-    if (modelSelect && modelSelectMeasure) {
-        const updateSelectWidth = () => {
-            const selectedText = modelSelect.options[modelSelect.selectedIndex]?.text || '';
-            modelSelectMeasure.textContent = selectedText;
-            const computed = window.getComputedStyle(modelSelect);
-            const paddingLeft = parseFloat(computed.paddingLeft) || 0;
-            const paddingRight = parseFloat(computed.paddingRight) || 0;
-            const borderLeft = parseFloat(computed.borderLeftWidth) || 0;
-            const borderRight = parseFloat(computed.borderRightWidth) || 0;
-            const extra = paddingLeft + paddingRight + borderLeft + borderRight + 12; // small buffer
-            modelSelect.style.width = (modelSelectMeasure.offsetWidth + extra) + 'px';
-        };
-        // Create hidden measurer styles
-        modelSelectMeasure.style.visibility = 'hidden';
-        modelSelectMeasure.style.whiteSpace = 'nowrap';
-        modelSelectMeasure.style.position = 'absolute';
-        modelSelectMeasure.style.pointerEvents = 'none';
-        // Match font styles
-        const syncMeasureStyle = () => {
-            const cs = window.getComputedStyle(modelSelect);
-            modelSelectMeasure.style.fontFamily = cs.fontFamily;
-            modelSelectMeasure.style.fontSize = cs.fontSize;
-            modelSelectMeasure.style.fontWeight = cs.fontWeight;
-            modelSelectMeasure.style.letterSpacing = cs.letterSpacing;
-        };
-        syncMeasureStyle();
-        updateSelectWidth();
-        modelSelect.addEventListener('change', updateSelectWidth);
-        window.addEventListener('resize', () => { syncMeasureStyle(); updateSelectWidth(); });
-    }
-
-    // Adaptive width for system select based on current selection text
-    if (systemSelect && systemSelectMeasure) {
-        const updateSystemSelectWidth = () => {
-            const selectedText = systemSelect.options[systemSelect.selectedIndex]?.text || '';
-            systemSelectMeasure.textContent = selectedText;
-            const computed = window.getComputedStyle(systemSelect);
-            const paddingLeft = parseFloat(computed.paddingLeft) || 0;
-            const paddingRight = parseFloat(computed.paddingRight) || 0;
-            const borderLeft = parseFloat(computed.borderLeftWidth) || 0;
-            const borderRight = parseFloat(computed.borderRightWidth) || 0;
-            const extra = paddingLeft + paddingRight + borderLeft + borderRight + 12; // small buffer
-            systemSelect.style.width = (systemSelectMeasure.offsetWidth + extra) + 'px';
-        };
-        // Create hidden measurer styles
-        systemSelectMeasure.style.visibility = 'hidden';
-        systemSelectMeasure.style.whiteSpace = 'nowrap';
-        systemSelectMeasure.style.position = 'absolute';
-        systemSelectMeasure.style.pointerEvents = 'none';
-        // Match font styles
-        const syncSystemMeasureStyle = () => {
-            const cs = window.getComputedStyle(systemSelect);
-            systemSelectMeasure.style.fontFamily = cs.fontFamily;
-            systemSelectMeasure.style.fontSize = cs.fontSize;
-            systemSelectMeasure.style.fontWeight = cs.fontWeight;
-            systemSelectMeasure.style.letterSpacing = cs.letterSpacing;
-        };
-        syncSystemMeasureStyle();
-        updateSystemSelectWidth();
-        systemSelect.addEventListener('change', updateSystemSelectWidth);
-        window.addEventListener('resize', () => { syncSystemMeasureStyle(); updateSystemSelectWidth(); });
-    }
 
     // Theme toggle functionality
     function getCurrentTheme() {
