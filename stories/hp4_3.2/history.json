@@ -156,6 +156,42 @@
                     "reasoning_tokens": 104
                 }
             }
+        },
+        {
+            "role": "user",
+            "content": "\"Yeah, before they're all taken\""
+        },
+        {
+            "role": "assistant",
+            "content": "\n\n<narration>\n\n\"Yeah, before they're all taken,\" Harry said, and the three of them pushed through the crowd toward the nearest carriage, trunks rattling over the platform edge.\n\nThey moved down the corridor single-file, peering through compartment windows. Full. Full. A group of second-years who'd somehow acquired a full set of Gobstones and already stank of it. Full. Near the back of the third carriage they found one with only a single occupant\u2014Neville Longbottom, round-faced and slightly damp, clutching a potted plant that appeared to be breathing.\n\n\"Everywhere else was taken,\" he said apologetically, as though the compartment were his fault.\n\nThey hauled their trunks onto the overhead racks\u2014Ron needed two attempts and nearly brained Hermione with a corner\u2014and settled in. Crookshanks claimed the window seat with the self-assurance of something that had never once been denied, and pressed his flat orange face against the glass. Hedwig clicked her beak from her cage, unimpressed.\n\nA whistle shrieked. The platform began to slide. Mrs. Weasley's wave shrank and vanished behind a curtain of steam, and then London was pulling apart around them\u2014rooftops, then suburbs, then the long green nothing of the countryside under a pale September sky.\n\nRon dug out the sandwiches his mother had packed, inspected one, and sighed. \"Corned beef.\"\n\n\"Trade you,\" said Neville, producing a squashed pasty from his pocket.\n\nHermione had already opened a book\u2014*The Standard Book of Spells, Grade 4*\u2014but her eyes kept drifting from the page to the window and back. After a moment she closed it on her thumb.\n\n\"Has anyone heard anything more? About what's supposed to be happening at school this year?\"\n\nRon shook his head, mouth full. \"Dad wouldn't say. Just kept grinning.\"\n\nNeville's plant let out a faint whistle, and a bubble of something yellowish swelled from one of its pods.\n\n</narration>",
+            "reasoning": "Harry agrees with Hermione and they head to find a compartment on the train. Let me narrate them boarding and finding a compartment. This is a good opportunity to set up the train ride - some social interactions, maybe some foreshadowing. I should keep it moving and end at a point where something interesting is happening or about to happen.\n\nLet me think about what happens on the train in canon Year 4. They find a compartment, Malfoy visits at some point, they discuss what's happening at Hogwarts (the tournament rumors). Neville might join them. \n\nI should narrate them getting on the train, finding a compartment, settling in, and then have something happen - maybe the train starts moving, they chat, and then someone comes by or something happens that requires player input.",
+            "reasoning_details": [
+                {
+                    "type": "reasoning.text",
+                    "signature": "ErYHCkgICxABGAIqQOghdyk36xlbVTpXmpdbqC57/dHDTAjdJFmEv8XjSqWWu3YgNyD3x7qeZZoPkAHZveFbN9eBYgr2XObK5dRETrASDM9ldUH3HullGM0qxRoMAAKYgU5k+E/wxVQcIjAJXUhtwEUADcwYgmp+Q49pe/e1gOn7caVjV7o/RzsiFyhRQ7W8LP5ipsOmdc14Pc8qmwZQOZpAbbMVJHDj+oYrJD9q+w1/V/vbwju8KIoxd+O4Y89WXwygYxlBoESytA5J5LAw0KHbBai09057rUShWkFeFCVhY7ey9y9FA01RlxRQyStuR25622WmWRZIdgoP7oJmkLSua5bcIQU7ZJ2Z+iBjCe5f1r3y6u7bed1wg1MUWqc8VZ3FENkLa2L/iwNu/jz7f2sa21ppijmeai+f2pzY54BeB+NKbwRP5RRmw+vu1pHJj0QiAH6hgrAkBtDcAGGoCWaBMU1CM+3l+Jb/gUX0tPUP1WeIeGIOTQWbg5Mgmf8FjH8SfWHYLk+GPL+BhmYDqvfSx5iosSZmXrul8Tk0TydVRdGK6ASfLxNhUAamOSM1HWdLJTvtmUn/yjw2J+g2aRKBPuvXTXMIIAoN8GS1DPz0fhvboOW19a42RLIe4zdoLRlUce/qXS0T/f4qnFMIthnTpOE3iAMTsNk3zHTj+UaDE2Ef90epcnrfDey63EYE8hMlgBhdNwHqYko4AQ+YB3DoPFhmRZOJ8EIbjlH/U6QMyQywO00WAbkR+VGv3CHj04zOSI6MDYM6ocexkHbWQ0OKwLdCnkDZ3iauBat2iALZTGUvTk5Jv10UnLghaSzFMYBmarSAP4IK6CH9a5GocCfZpTPOuhwhaNzPadVYyPuWKUTgdW6WyczRhsmioH9kbLECuJcmUMRV5od2gOOlAfSn+3veN/nSlSC9GmiR97Hcw85N2zwz8DFA65cCT80OXhIvMrlRwbuOWJb/LvjRD/6L3t1Pmkh2ZBDAsq2p5g8nE6NR8Ys1oXrqULdUgaA0ciCYYg1+KXfjH+iTzeZKXR8CdJGgNgMD6+/vzZU2fNgm5r7CO0y82f9NlttkR33yEtLreLokhoN7FgGjonT5+abShtsGk2buve4U1KpYM/uNZeMhHBAO9/VyKRD2AhzejyTCiXx0w4w7utphD8ZTgIuc2G+lbo5d4/EKUJIBhR8lKLDtd65HuwrE+mey3DuEexq1QIhlnEzjuERxPi0MWdxhqgGq6/gQm85V5ey1WYlY7Sw1qZrLqz0YAQ==",
+                    "format": "anthropic-claude-v1",
+                    "index": 0
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 21190,
+                "completion_tokens": 672,
+                "total_tokens": 21862,
+                "cost": 0.12275,
+                "is_byok": false,
+                "prompt_tokens_details": {
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0
+                },
+                "cost_details": {
+                    "upstream_inference_cost": 0.12275,
+                    "upstream_inference_prompt_cost": 0.10595,
+                    "upstream_inference_completions_cost": 0.0168
+                },
+                "completion_tokens_details": {
+                    "reasoning_tokens": 199
+                }
+            }
         }
     ]
 }
