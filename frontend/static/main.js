@@ -905,8 +905,21 @@ function addNewStory(story) {
     const li = document.createElement('li');
     li.className = 'story-item';
     li.setAttribute('data-story', story.story_name || story.name);
-    const icon = document.createElement('i');
-    icon.className = 'fas fa-scroll';
+    
+    // Create appropriate icon based on system type
+    let icon;
+    const system = story.system || 'unknown';
+    if (system === 'hp') {
+        icon = document.createElement('span');
+        icon.className = 'hp-logo-icon';
+    } else {
+        icon = document.createElement('i');
+        if (system === 'dnd5e') {
+            icon.className = 'fab fa-d-and-d';
+        } else {
+            icon.className = 'fas fa-scroll';
+        }
+    }
     
     const contentDiv = document.createElement('div');
     contentDiv.className = 'story-item-content';

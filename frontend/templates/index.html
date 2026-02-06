@@ -9,6 +9,8 @@
                 document.documentElement.setAttribute('data-theme', savedTheme);
             }
         })();
+        // Initial story from URL (if any)
+        window.INITIAL_STORY = {{ selected_story | tojson | safe if selected_story else 'null' }};
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -237,14 +239,13 @@
             font-weight: 500;
             flex: 1;
             min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         
         .story-system {
-            font-weight: 600;
-            color: var(--discord-text-muted);
-            font-size: 0.85rem;
-            margin-left: 8px;
-            flex-shrink: 0;
+            display: none;
         }
         
         .story-meta {
@@ -253,6 +254,94 @@
             margin-top: 2px;
             text-align: left;
             width: 100%;
+        }
+        
+        /* Story Menu Button */
+        .story-menu-btn {
+            background: transparent !important;
+            border: none;
+            color: var(--discord-text-muted);
+            cursor: pointer;
+            padding: 0;
+            margin: 0;
+            border-radius: 4px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: auto;
+            flex-shrink: 0;
+            width: 20px;
+            height: 20px;
+            min-width: 20px;
+            min-height: 20px;
+            line-height: 1;
+        }
+        
+        .story-menu-btn i {
+            display: block;
+            font-size: 0.85rem;
+            line-height: 1;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .story-item:hover .story-menu-btn {
+            opacity: 1;
+        }
+        
+        .story-menu-btn:hover {
+            background-color: transparent !important;
+            color: var(--discord-text-normal);
+        }
+        
+        .story-menu-btn:active {
+            background-color: transparent !important;
+        }
+        
+        /* Story Context Menu */
+        .story-context-menu {
+            position: fixed;
+            background-color: var(--discord-darkest);
+            border: 1px solid var(--discord-border);
+            border-radius: 6px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            z-index: 1500;
+            min-width: 160px;
+            display: none;
+            pointer-events: none;
+        }
+        
+        .story-context-menu.show {
+            display: block;
+            pointer-events: auto;
+        }
+        
+        .context-menu-item {
+            padding: 10px 12px;
+            color: var(--discord-text-normal);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            transition: background-color 0.15s ease;
+        }
+        
+        .context-menu-item:hover {
+            background-color: var(--discord-darker);
+            color: var(--discord-text-light);
+        }
+        
+        .context-menu-item i {
+            color: var(--discord-text-muted);
+            width: 16px;
+            font-size: 0.8rem;
+        }
+        
+        .context-menu-item:hover i {
+            color: var(--discord-accent);
         }
         
         /* Modal Styles */
@@ -429,13 +518,21 @@
             <ul class="story-list" id="story-list">
                 {% for story in stories %}
                 <li class="story-item {% if session.get('story') == story.name %}active{% endif %}" data-story="{{ story.name }}">
-                    <i class="fas fa-scroll"></i>
+                    {% if story.system == 'hp' %}<span class="hp-logo-icon" title="{{ story.system }}"></span>{% else %}<i class="{% if story.system == 'dnd5e' %}fab fa-d-and-d{% else %}fas fa-scroll{% endif %}" title="{{ story.system }}"></i>{% endif %}
                     <div class="story-item-content">
                         <div class="story-name-row">
                             <span class="story-name">{{ story.name }}</span>
-                            <span class="story-system">{{ story.system }}</span>
                         </div>
                         <span class="story-meta">{{ story.model }}</span>
+                    </div>
+                    <button class="story-menu-btn" data-story="{{ story.name }}" title="Story options">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </button>
+                    <div class="story-context-menu" data-story="{{ story.name }}">
+                        <div class="context-menu-item" data-action="copy-story">
+                            <i class="fas fa-copy"></i>
+                            <span>Copy Story</span>
+                        </div>
                     </div>
                 </li>
                 {% endfor %}
@@ -450,7 +547,13 @@
         <!-- Main chat area -->
         <div class="chat-wrapper">
             <div class="chat-header" id="chat-header" style="display: none;">
-                <h5 id="current-story-title"></h5>
+                <div class="story-header-content">
+                    <div class="story-title-row">
+                        <i id="current-story-icon" class="story-header-icon" style="display: none;"></i>
+                        <h5 id="current-story-title"></h5>
+                    </div>
+                    <div id="current-story-model" class="story-model-subtext" style="display: none;"></div>
+                </div>
                 <button id="export-button" class="header-button export-button" title="Export conversation to console">
                     <i class="fas fa-code"></i>
                 </button>
@@ -460,43 +563,7 @@
                     <!-- Messages will appear here -->
                 </div>
 
-                <!-- Tool operations will be displayed inline in the chat -->
-
                 <div class="input-area">
-                    <div class="input-buttons-left">
-                        <button id="archive-button" class="input-button archive-button" title="Archive current conversation">
-                            <i class="fas fa-archive"></i>
-                        </button>
-                        <div class="cost-button-container">
-                            <button id="cost-button" class="input-button cost-button" title="Cost information">
-                                <i class="fas fa-sack-dollar"></i>
-                            </button>
-                            <div id="cost-popup" class="cost-popup">
-                                <div class="cost-popup-header">
-                                    <i class="fas fa-sack-dollar"></i>
-                                    <span>Usage & Cost</span>
-                                </div>
-                                <div class="cost-popup-body">
-                                    <div class="cost-stat">
-                                        <span class="cost-label">Total Tokens</span>
-                                        <span class="cost-value" id="cost-total-tokens">0</span>
-                                    </div>
-                                    <div class="cost-stat">
-                                        <span class="cost-label">Avg Tokens/Turn</span>
-                                        <span class="cost-value" id="cost-avg-tokens">0</span>
-                                    </div>
-                                    <div class="cost-stat">
-                                        <span class="cost-label">Total Cost</span>
-                                        <span class="cost-value" id="cost-total-cost">$0.00</span>
-                                    </div>
-                                    <div class="cost-stat">
-                                        <span class="cost-label">Avg Cost/Turn</span>
-                                        <span class="cost-value" id="cost-avg-cost">$0.00</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                     <form id="message-form">
                         <input 
                             type="text" 
@@ -511,6 +578,40 @@
             <div class="welcome-container" id="welcome-container">
                 <p>Select an existing story from the sidebar or create a new one to begin your adventure.</p>
                 <i class="fas fa-dice-d20 fa-3x" style="color: var(--discord-accent); opacity: 0.8; margin-bottom: 20px;"></i>
+            </div>
+
+            <!-- Floating corner buttons -->
+            <button id="archive-button" class="floating-button left" title="Archive current conversation">
+                <i class="fas fa-archive"></i>
+            </button>
+            <div class="floating-cost-container">
+                <button id="cost-button" class="floating-button right" title="Cost information">
+                    <i class="fas fa-sack-dollar"></i>
+                </button>
+                <div id="cost-popup" class="cost-popup">
+                    <div class="cost-popup-header">
+                        <i class="fas fa-sack-dollar"></i>
+                        <span>Usage & Cost</span>
+                    </div>
+                    <div class="cost-popup-body">
+                        <div class="cost-stat">
+                            <span class="cost-label">Total Tokens</span>
+                            <span class="cost-value" id="cost-total-tokens">0</span>
+                        </div>
+                        <div class="cost-stat">
+                            <span class="cost-label">Avg Tokens/Turn</span>
+                            <span class="cost-value" id="cost-avg-tokens">0</span>
+                        </div>
+                        <div class="cost-stat">
+                            <span class="cost-label">Total Cost</span>
+                            <span class="cost-value" id="cost-total-cost">$0.00</span>
+                        </div>
+                        <div class="cost-stat">
+                            <span class="cost-label">Avg Cost/Turn</span>
+                            <span class="cost-value" id="cost-avg-cost">$0.00</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -649,6 +750,59 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="select-story-config-modal-cancel">Cancel</button>
                 <button class="btn btn-primary" id="select-story-config-btn">Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Copy Story Modal -->
+    <div id="copy-story-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5>Copy Story</h5>
+                <button class="modal-close" id="copy-story-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="copy_story_name">New Story Name</label>
+                    <input 
+                        type="text" 
+                        id="copy_story_name" 
+                        class="form-control" 
+                        placeholder="Enter new story name"
+                        required
+                    >
+                </div>
+                <div class="form-group">
+                    <label class="select-label">Model</label>
+                    <div class="custom-select-wrapper">
+                        <div class="custom-select" id="copy-story-model-select-custom" tabindex="0">
+                            <span class="custom-select-value">openai/gpt-5.2</span>
+                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                        </div>
+                        <select id="copy-story-model-select" class="model-select" style="display: none;">
+                            {% for model in models %}
+                            <option value="{{ model }}" {% if model == 'openai/gpt-5.2' %}selected{% endif %}>{{ model }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="custom-select-dropdown" id="copy-story-model-select-dropdown">
+                            {% for model in models %}
+                            <div class="custom-select-option" data-value="{{ model }}" {% if model == 'openai/gpt-5.2' %}data-selected="true"{% endif %}>{{ model }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="copy_all_history" style="width: auto; margin: 0;">
+                        <span>Copy all history files (including archived conversations)</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="copy-story-modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="copy-story-btn">Copy</button>
             </div>
         </div>
     </div>

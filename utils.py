@@ -1,6 +1,7 @@
 import os
 import json
 import shutil
+import logging
 
 purple = '\x1b[38;2;255;0;255m'
 blue = '\x1b[38;2;0;0;255m'
@@ -18,6 +19,40 @@ white = '\x1b[38;2;255;255;255m'
 bold = '\033[1m'
 underline = '\033[4m'
 endc = '\033[0m'
+
+# === Logging Setup ===
+
+class ColoredFormatter(logging.Formatter):
+    """Custom formatter that adds colors to log messages based on level."""
+    LEVEL_COLORS = {
+        logging.DEBUG: gray,
+        logging.INFO: cyan,
+        logging.WARNING: orange,
+        logging.ERROR: red,
+    }
+    
+    def format(self, record):
+        color = self.LEVEL_COLORS.get(record.levelno, white)
+        message = super().format(record)
+        return f"{color}{message}{endc}"
+
+def _debug_enabled() -> bool:
+    """Check if debug mode is enabled (used at module load time)."""
+    return os.environ.get("DEBUG", "0").lower() == "1"
+
+def setup_logger() -> logging.Logger:
+    """Configure and return the application logger."""
+    logger = logging.getLogger("lm_rpg")
+    if not logger.handlers:  # Avoid adding handlers multiple times
+        handler = logging.StreamHandler()
+        handler.setFormatter(ColoredFormatter("%(levelname)s: %(message)s"))
+        logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG if _debug_enabled() else logging.WARNING)
+    return logger
+
+logger = setup_logger()
+
+# === Constants ===
 
 STORIES_ROOT_DIR = "stories"
 GAME_SYSTEMS_ROOT_DIR = "systems"
@@ -78,17 +113,43 @@ def historyExists(story_name: str) -> bool:
     return os.path.exists(f"./stories/{story_name}/history.json")
 
 def getFullStoryInstruction(system_name: str, story_name: str) -> str:
-    """Fetches the system instructions and appends any existing story files (pc.md, story_plan.md, story_summary.md)."""
-    with open(f"{GAME_SYSTEMS_ROOT_DIR}/{system_name}/instructions.md", 'r') as f:
-        result = f.read()
+    """Fetches the system instructions and appends any existing story files (pc.md, story_plan.md, story_summary.md).
     
-    for file_name in ["pc.md", "story_plan.md", "story_summary.md"]:
-        try:
-            with open(f"{STORIES_ROOT_DIR}/{story_name}/{file_name}", 'r') as f:
-                result += f"\n---\n{f.read()}"
-        except FileNotFoundError:
-            continue
-    return result
+    Each section is wrapped in XML tags for clarity:
+    - <global_instructions>: The game system's base instructions
+    - <story_plan>: The story plan/outline
+    - <player_character>: The player character details
+    - <story_summary>: Summary of story events so far
+    """
+    result_parts = []
+    
+    # Load global instructions (required)
+    with open(f"{GAME_SYSTEMS_ROOT_DIR}/{system_name}/instructions.md", 'r') as f:
+        global_instructions = f.read()
+    result_parts.append(f"<global_instructions>\n{global_instructions}\n</global_instructions>")
+    
+    # Load story plan (optional)
+    story_plan_path = f"{STORIES_ROOT_DIR}/{story_name}/story_plan.md"
+    if os.path.exists(story_plan_path):
+        with open(story_plan_path, 'r') as f:
+            story_plan = f.read()
+        result_parts.append(f"<story_plan>\n{story_plan}\n</story_plan>")
+    
+    # Load player character (optional)
+    pc_path = f"{STORIES_ROOT_DIR}/{story_name}/pc.md"
+    if os.path.exists(pc_path):
+        with open(pc_path, 'r') as f:
+            player_character = f.read()
+        result_parts.append(f"<player_character>\n{player_character}\n</player_character>")
+    
+    # Load story summary (optional)
+    story_summary_path = f"{STORIES_ROOT_DIR}/{story_name}/story_summary.md"
+    if os.path.exists(story_summary_path):
+        with open(story_summary_path, 'r') as f:
+            story_summary = f.read()
+        result_parts.append(f"<story_summary>\n{story_summary}\n</story_summary>")
+    
+    return "\n\n".join(result_parts)
 
 # === History Archive Functions ===
 
@@ -148,3 +209,71 @@ def loadAllPreviousHistory(story_name: str) -> list[dict]:
             continue
     
     return all_messages
+
+def copyStory(source_story_name: str, new_story_name: str, new_model_name: str, copy_all_history: bool = False) -> bool:
+    """Copy a story to a new story directory.
+    
+    Args:
+        source_story_name: Name of the source story to copy
+        new_story_name: Name for the new story
+        new_model_name: Model name for the new story
+        copy_all_history: If True, copy all history files including archived conversations.
+                         If False, only copy markdown files (pc.md, story_plan.md, story_summary.md)
+    
+    Returns:
+        True if copy was successful, False otherwise
+    """
+    source_dir = f"./{STORIES_ROOT_DIR}/{source_story_name}"
+    new_dir = f"./{STORIES_ROOT_DIR}/{new_story_name}"
+    
+    # Check if source exists
+    if not os.path.exists(source_dir):
+        return False
+    
+    # Check if destination already exists
+    if os.path.exists(new_dir):
+        return False
+    
+    try:
+        # Create new directory
+        os.makedirs(new_dir, exist_ok=True)
+        
+        # Load source story info
+        source_info = loadStoryInfo(source_story_name)
+        source_system = source_info.get('system', 'hp')
+        
+        # Create new info.json with new model
+        with open(os.path.join(new_dir, "info.json"), "w") as f:
+            json.dump({
+                "system": source_system,
+                "model": new_model_name,
+                "story_name": new_story_name,
+            }, f, indent=4)
+        
+        # Copy markdown files (always copied)
+        markdown_files = ["pc.md", "story_plan.md", "story_summary.md"]
+        for md_file in markdown_files:
+            source_path = os.path.join(source_dir, md_file)
+            if os.path.exists(source_path):
+                shutil.copy2(source_path, os.path.join(new_dir, md_file))
+        
+        # Copy history files if requested
+        if copy_all_history:
+            # Copy current history.json if it exists
+            source_history = os.path.join(source_dir, "history.json")
+            if os.path.exists(source_history):
+                shutil.copy2(source_history, os.path.join(new_dir, "history.json"))
+            
+            # Copy previous history directory if it exists
+            source_prev_dir = getPreviousHistoryDir(source_story_name)
+            if os.path.exists(source_prev_dir):
+                new_prev_dir = getPreviousHistoryDir(new_story_name)
+                shutil.copytree(source_prev_dir, new_prev_dir)
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error copying story: {e}")
+        # Clean up on error
+        if os.path.exists(new_dir):
+            shutil.rmtree(new_dir)
+        return False

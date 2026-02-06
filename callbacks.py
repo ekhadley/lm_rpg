@@ -1,15 +1,6 @@
 from flask_socketio import SocketIO
 from utils import *
 
-# each type of callback is given these exact arguments as keywords
-def example_text_callback(text: str):
-    print(f"Assistant: '{text}'")
-def example_tool_request_callback(name: str, inputs: dict):
-    print(f"Tool requested: {name}({inputs})")
-def example_tool_submit_callback(names: list[str], inputs: list[dict], results: list[str]):
-    for i in range(len(names)):
-        print(f"Tool output submitted: {names[i]}({inputs[i]}) = {results[i]}")
-
 class CallbackHandler:
     def text_output(self, text):
         pass
@@ -21,7 +12,7 @@ class CallbackHandler:
         pass
     def tool_submit(self, names: list[str], inputs: list[dict], results: list[str]):
         pass
-    def turn_end(self, cost_stats: dict = None):
+    def turn_end(self, cost_stats: dict = None, finish_reason: str = None):
         pass
 
 class TerminalPrinter(CallbackHandler): # streams text into the terminal in nice blocks.
@@ -54,8 +45,11 @@ class TerminalPrinter(CallbackHandler): # streams text into the terminal in nice
         for i, name in enumerate(names):
             if name not in ["summarize_story", "read_story_summary", "read_character_creation_guide", "write_file", "read_file"]:
                 print(self.tool_color, f"\nTool output submitted: {name}({inputs[i]}) = {results[i]}", endc)
-    def turn_end(self, cost_stats: dict = None):
+    def turn_end(self, cost_stats: dict = None, finish_reason: str = None):
         self.narrating = False
+        self.thinking = False  # Reset for next turn
+        if finish_reason:
+            logger.debug(f"Turn ended with finish_reason: {finish_reason}")
 
 class WebCallbackHandler(CallbackHandler):
     def __init__(self, socket: SocketIO):
@@ -87,8 +81,11 @@ class WebCallbackHandler(CallbackHandler):
         self.outputting_text = False
         self.emit('tool_submit', tools=[{"name": names[i], "inputs": inputs[i], "result": results[i]} for i in range(len(names))])
 
-    def turn_end(self, cost_stats: dict = None):
+    def turn_end(self, cost_stats: dict = None, finish_reason: str = None):
         self.outputting_text = False
+        self.thinking = False  # Reset for next turn so think_start is emitted properly
+        if finish_reason:
+            logger.debug(f"Turn ended with finish_reason: {finish_reason}")
         self.emit('turn_end', cost_stats=cost_stats)
 
     def emit(self, event, **kwargs):

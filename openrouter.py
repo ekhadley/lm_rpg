@@ -160,14 +160,13 @@ class OpenRouterStream:
                 if self.pending_objects:
                     # We parsed some objects but failed on the rest. Return what we have.
                     self.decode_retry_count = 0
-                    if debug(): print(f"{bold+orange}Partial parse success. Discarding tail: {data_payload[pos:]}{endc}")
+                    logger.warning(f"Partial parse success. Discarding tail: {data_payload[pos:]}")
                     return self.pending_objects.pop(0)
 
                 self.decode_retry_count += 1
                 if self.decode_retry_count > self.decode_retry_limit or self.content_stream_finished:
-                    if debug():
-                        print(f"{bold+red}({self.decode_retry_count}) [{self.content_stream_finished}] Error decoding data payload: {repr(data_payload)} {endc}")
-                        print(f"{bold+orange}{repr(self.buffer)} {endc}")
+                    logger.error(f"({self.decode_retry_count}) [{self.content_stream_finished}] Error decoding data payload: {repr(data_payload)}")
+                    logger.error(f"Buffer contents: {repr(self.buffer)}")
                     raise e
                 # On transient decode issues, keep accumulating more data
                 continue
@@ -277,6 +276,7 @@ class OpenRouterProvider():
     def run(self) -> None:
         currently_outputting_text = False
         pending_tool_calls = False
+        finish_reason = None
         stream = self.getStream()
         
         for event in stream:
@@ -388,7 +388,7 @@ class OpenRouterProvider():
             return
 
         stream.close()
-        self.cb.turn_end(cost_stats=self.getCostStats())
+        self.cb.turn_end(cost_stats=self.getCostStats(), finish_reason=finish_reason)
 
     def submitToolCall(self, tool_name: str, tool_arguments: dict, tool_call_id: str) -> None:
         self.messages.append({

@@ -1,5 +1,5 @@
 {
     "system": "hp",
-    "model": "anthropic/claude-opus-4.5",
+    "model": "anthropic/claude-opus-4.6",
     "story_name": "hp4_3"
 }

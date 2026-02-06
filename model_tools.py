@@ -59,12 +59,10 @@ class Tool:
 
     def getResult(self, parameters: dict) -> str:
         try:
-            #if debug(): print(pink, f"calling tool '{self.name}' with parameters {parameters}", endc)
             tool_result = str(self.handler(**parameters, **self.kwargs))
-            #if debug(): print(pink, f"tool returned: '{tool_result}'", endc)
             return tool_result
         except Exception as e:
-            if debug(): print(bold, red, f"error in tool {self.name}: {str(e)}", endc)
+            logger.error(f"error in tool {self.name}: {str(e)}")
             return f"error in tool {self.name}: {str(e)}"
     
     
@@ -75,7 +73,7 @@ class Toolbox:
         self.tool_map = {tool.name: tool for tool in self.tools}
     
     def getToolResult(self, tool_name: str, parameters: dict) -> str:
-        print(lime, parameters, endc)
+        logger.info(f"Tool: {tool_name}({parameters})")
         if isinstance(parameters, str):
             if parameters != "":
                 try:
@@ -94,7 +92,7 @@ class Toolbox:
         if tool_name in self.tool_map:
             return self.tool_map[tool_name].getResult(parameters)
         else:
-            if debug(): print(bold, red, f"attempt to call nonexistant tool", endc)
+            logger.error(f"attempt to call nonexistent tool: {tool_name}")
             return f"error: Tool {tool_name} not found."
 
     def getToolSchemas(self) -> list[dict[str, str]]:
