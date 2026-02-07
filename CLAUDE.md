@@ -44,3 +44,4 @@ Requires `OPENROUTER_API_KEY` in `.env`. Set `DEBUG=1` for verbose logging.
 - **Message flow**: User input → SocketIO → narrator → OpenRouter stream → callbacks emit SocketIO events → frontend renders incrementally.
 - **System prompt** is assembled from global instructions.md + optional story files, each wrapped in XML tags (`<global_instructions>`, `<story_plan>`, etc.).
 - **No tests or CI** exist currently.
+- **No default browser dialogs** — Never use `alert()`, `confirm()`, or `prompt()`. Always use custom-styled popups/modals.

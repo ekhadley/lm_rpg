@@ -61,6 +61,12 @@ GAME_SYSTEMS_ROOT_DIR = "systems"
 def listStoryNames() -> list[str]:
     return sorted(f for f in os.listdir("./stories") if not f.startswith('.'))
 
+def listStoryMarkdownFiles(story_name: str) -> list[str]:
+    story_dir = f"./{STORIES_ROOT_DIR}/{story_name}"
+    if not os.path.exists(story_dir):
+        return []
+    return sorted(f for f in os.listdir(story_dir) if f.endswith('.md'))
+
 def _system_has_instructions(system_name: str) -> bool:
     """Returns True only if the system has a base instructions.md file."""
     return os.path.exists(f"{GAME_SYSTEMS_ROOT_DIR}/{system_name}/instructions.md")

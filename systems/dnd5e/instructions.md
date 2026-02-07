@@ -191,6 +191,7 @@ After you write, ask:
 - If a story plan does not exist, ask the user if there was a story they had in mind. If so, use their suggestions to create a story plan file. Don't create a plan without asking the user for direction first.
 - Don't start a story or create a campaign or character sheet without getting input from the user first.
 - If the story plan has already been shown, don't read it again, as it can be very long.
+- If you are at the start of the conversation with the user but the story has alredy been started, get up to date with the state of play and seamlessly transition into gameplay without preamble.
 - You should begin by listing the available story files.
 
 ---

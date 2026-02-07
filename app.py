@@ -8,7 +8,8 @@ from narrator import Narrator
 from utils import (
     logger, listStoryNames, loadStoryInfo, makeNewStoryDir,
     historyExists, isValidGameSystem, listGameSystemNames,
-    archiveHistory, copyStory, archiveStoryDir,
+    archiveHistory, copyStory, archiveStoryDir, listStoryMarkdownFiles,
+    loadAllPreviousHistory,
 )
 
 app = Flask(__name__, template_folder="frontend/templates", static_folder="frontend/static")
@@ -56,7 +57,11 @@ def select_story(data: dict[str, str]):
     narrator = init_narrator(story_name, story_info, model_name)
     logger.debug(f"narrator initialized for story: '{story_name}'")
     narrator.loadStory()
-    emit('story_locked', {"model_name": narrator.model_name, "system_name": story_info["system"]})
+    emit('story_locked', {
+        "model_name": narrator.model_name,
+        "system_name": story_info["system"],
+        "story_files": listStoryMarkdownFiles(story_name),
+    })
     logger.info(f"narrator initialized: {narrator}")
 
 @socket.on('user_message')
@@ -120,6 +125,8 @@ def archive_history():
         emit('error', {"message": "No story selected"})
         return
     story_name = narrator.story_name
+    # Let the model save any state it needs before archiving
+    narrator.handleUserMessage({"message": "System: archive story state"})
     if archiveHistory(story_name):
         logger.debug(f"archived history for story: '{story_name}'")
         # Clear the narrator's messages so the next user message starts fresh
@@ -144,17 +151,71 @@ def delete_story(data: dict[str, str]):
     else:
         emit('error', {"message": f"Story '{story_name}' not found"})
 
-@socket.on('retry_last_response')
-def retry_last_response():
+@socket.on('get_story_file')
+def get_story_file(data: dict[str, str]):
+    global narrator
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
+    filename = data.get('filename', '')
+    if not filename.endswith('.md') or '/' in filename or '\\' in filename:
+        emit('error', {"message": "Invalid filename"})
+        return
+    filepath = f"./stories/{narrator.story_name}/{filename}"
+    if not os.path.exists(filepath):
+        emit('error', {"message": f"File not found: {filename}"})
+        return
+    with open(filepath, 'r') as f:
+        content = f.read()
+    emit('story_file_content', {"filename": filename, "content": content})
+
+@socket.on('get_debug_messages')
+def get_debug_messages():
+    global narrator
+    if narrator is None:
+        emit('debug_messages', [])
+        return
+
+    def truncate_system(msg):
+        m = dict(msg)
+        if m.get('role') == 'system' and isinstance(m.get('content'), str) and len(m['content']) > 200:
+            m['content'] = m['content'][:200] + f'... ({len(msg["content"])} chars total)'
+        return m
+
+    result = []
+    # Previous (archived) conversations
+    previous = loadAllPreviousHistory(narrator.story_name)
+    if previous:
+        result.extend([truncate_system(m) for m in previous])
+        result.append({"role": "_separator", "content": "Current Conversation"})
+    # Current/live conversation
+    result.extend([truncate_system(m) for m in narrator.provider.messages])
+    emit('debug_messages', result)
+
+@socket.on('retry_response')
+def retry_response(data=None):
     global narrator
     assert narrator is not None, "Narrator has not been initialized."
     messages = narrator.provider.messages
-    for i in range(len(messages) - 1, -1, -1):
-        if messages[i].get("role") == "user":
-            narrator.provider.messages = messages[:i + 1]
-            narrator.provider.run()
-            narrator.saveMessages()
-            return
+    turn_index = data.get('turn_index') if data else None
+
+    if turn_index is not None:
+        user_count = 0
+        for i, msg in enumerate(messages):
+            if msg.get("role") == "user":
+                if user_count == turn_index:
+                    narrator.provider.messages = messages[:i + 1]
+                    narrator.provider.run()
+                    narrator.saveMessages()
+                    return
+                user_count += 1
+    else:
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "user":
+                narrator.provider.messages = messages[:i + 1]
+                narrator.provider.run()
+                narrator.saveMessages()
+                return
 
 def get_stories_with_info():
     """Helper to load all stories with their info."""

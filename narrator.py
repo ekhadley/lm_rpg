@@ -32,7 +32,7 @@ class Narrator:
         self.socket: SocketIO = socket
         self.system_prompt = getFullStoryInstruction(system_name, story_name)
         self.story_history_path = f"./stories/{story_name}/history.json"
-        self.thinking_effort = "high"
+        self.thinking_effort = "xhigh"
 
         self.provider = OpenRouterProvider(
             model_name=model_name,
@@ -72,11 +72,12 @@ class Narrator:
         # Load live history (this populates self.provider.messages for model)
         history = self.loadMessages()
         if history is not None:
+            self.saveMessages()  # Persist live system prompt update to disk
             # Transform messages from OpenRouter format (role) to frontend format (type)
             frontend_messages = self._transformMessagesForFrontend(self.provider.messages)
             self.socket.emit('conversation_history', frontend_messages)
-        else:
-            self.provider.addUserMessage("<|begin_conversation|>")
+        elif not previous_messages:
+            self.provider.addUserMessage("System: start of story")
             self.provider.run()
             self.saveMessages()
         self.socket.emit('assistant_ready')
@@ -87,7 +88,7 @@ class Narrator:
         frontend_messages = []
         
         # Special messages that should not be displayed to the user
-        SKIP_MESSAGES = {"<|begin_conversation|>"}
+        SKIP_MESSAGES = {"System: start of story"}
         
         for msg in messages:
             role = msg.get("role")

@@ -18,496 +18,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600&display=swap">
-    <style>
-        html, body {
-            background-color: var(--discord-darkest);
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            color: var(--discord-text-normal);
-        }
-        
-        /* Override Bootstrap defaults */
-        .bootstrap-wrapper, .container, .row, .col {
-            background-color: var(--discord-darkest);
-        }
-
-        /* Enhanced shadows for depth */
-        .sidebar {
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-            z-index: 10;
-        }
-        
-        .chat-wrapper {
-            box-shadow: none;
-        }
-        /* Model and system selects - Pill style */
-        .model-select-inline {
-            width: 100%;
-            padding: 8px 16px;
-            background: var(--discord-dark);
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-        
-        .select-pill {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            background: var(--discord-darker);
-            border-radius: 20px;
-            padding: 6px 8px 6px 8px;
-            border: 1px solid var(--discord-border);
-            transition: all 0.2s ease;
-            position: relative;
-            overflow: visible;
-        }
-        
-        .select-pill .custom-select-dropdown {
-            left: 50%;
-            transform: translateX(-50%) translateY(-8px);
-            min-width: max-content;
-            width: max-content;
-        }
-        
-        .select-pill .custom-select-dropdown.show {
-            transform: translateX(-50%) translateY(0);
-        }
-        
-        .select-pill:hover {
-            border-color: var(--discord-accent);
-            background: rgba(88, 101, 242, 0.1);
-        }
-        
-        .select-pill i {
-            color: var(--discord-text-muted);
-            font-size: 0.75rem;
-            flex-shrink: 0;
-            transition: color 0.2s ease;
-        }
-        
-        .select-pill:hover i {
-            color: var(--discord-accent);
-        }
-        
-        /* Custom Select Wrapper */
-        .custom-select-wrapper {
-            position: static;
-            flex: 1;
-            min-width: 80px;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .custom-select {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: transparent;
-            border: none;
-            padding: 0;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            user-select: none;
-            width: 100%;
-        }
-        
-        .custom-select:hover {
-            background: transparent;
-        }
-        
-        .custom-select.active {
-            background: transparent;
-        }
-        
-        .custom-select.disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            pointer-events: none;
-        }
-        
-        .custom-select-value {
-            color: var(--discord-text-normal);
-            font-size: 0.85rem;
-            flex: 1;
-        }
-        
-        .custom-select-arrow {
-            color: var(--discord-text-muted);
-            font-size: 0.7rem;
-            margin-left: 6px;
-            transition: transform 0.2s ease, color 0.2s ease;
-        }
-        
-        .select-pill:hover .custom-select-arrow {
-            color: var(--discord-accent);
-        }
-        
-        .custom-select.active .custom-select-arrow {
-            transform: rotate(180deg);
-            color: var(--discord-accent);
-        }
-        
-        /* Custom Dropdown */
-        .custom-select-dropdown {
-            position: absolute;
-            top: calc(100% + 4px);
-            left: 0;
-            min-width: 100%;
-            background: var(--discord-darkest);
-            border: 1px solid var(--discord-border);
-            border-radius: 6px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            z-index: 1000;
-            max-height: 200px;
-            overflow-y: auto;
-            display: none;
-            opacity: 0;
-            transform: translateY(-8px);
-            transition: opacity 0.2s ease, transform 0.2s ease;
-        }
-        
-        .custom-select-dropdown.show {
-            display: block;
-            opacity: 1;
-            transform: translateY(0);
-        }
-        
-        .custom-select-option {
-            padding: 6px 10px;
-            color: var(--discord-text-normal);
-            font-size: 0.85rem;
-            cursor: pointer;
-            transition: background-color 0.15s ease;
-            line-height: 1.3;
-        }
-        
-        .custom-select-option:hover {
-            background-color: rgba(88, 101, 242, 0.2);
-            color: var(--discord-text-light);
-        }
-        
-        /* Gruvbox theme override */
-        [data-theme="gruvbox-dark"] .custom-select-option:hover {
-            background-color: rgba(131, 165, 152, 0.2);
-        }
-        
-        .custom-select-option.selected {
-            background-color: var(--discord-accent);
-            color: var(--discord-text-light);
-        }
-        
-        /* Hidden native selects */
-        .model-select, .system-select {
-            display: none;
-        }
-        
-        /* Disabled state for pills */
-        .select-pill:has(.custom-select.disabled) {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        
-        .select-pill:has(.custom-select.disabled):hover {
-            border-color: var(--discord-border);
-            background: var(--discord-darker);
-        }
-        
-        .select-pill:has(.custom-select.disabled) i {
-            opacity: 0.6;
-        }
-        
-        /* Story Item Meta */
-        .story-item-content {
-            display: flex;
-            flex-direction: column;
-            flex: 1;
-            min-width: 0;
-            width: 100%;
-        }
-        
-        .story-name-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            width: 100%;
-        }
-        
-        .story-name {
-            font-weight: 500;
-            flex: 1;
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        
-        .story-meta {
-            font-size: 0.7rem;
-            color: var(--discord-text-muted);
-            margin-top: 2px;
-            text-align: left;
-            width: 100%;
-        }
-        
-        /* Story Menu Button */
-        .story-menu-btn {
-            background: transparent !important;
-            border: none;
-            color: var(--discord-text-muted);
-            cursor: pointer;
-            padding: 0;
-            margin: 0;
-            border-radius: 4px;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-left: auto;
-            flex-shrink: 0;
-            width: 20px;
-            height: 20px;
-            min-width: 20px;
-            min-height: 20px;
-            line-height: 1;
-        }
-        
-        .story-menu-btn i {
-            display: block;
-            font-size: 0.85rem;
-            line-height: 1;
-            margin: 0;
-            padding: 0;
-        }
-        
-        .story-item:hover .story-menu-btn {
-            opacity: 1;
-        }
-        
-        .story-menu-btn:hover {
-            background-color: transparent !important;
-            color: var(--discord-text-normal);
-        }
-        
-        .story-menu-btn:active {
-            background-color: transparent !important;
-        }
-        
-        /* Story Context Menu */
-        .story-context-menu {
-            position: fixed;
-            background-color: var(--discord-darkest);
-            border: 1px solid var(--discord-border);
-            border-radius: 6px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-            z-index: 1500;
-            min-width: 160px;
-            display: none;
-            pointer-events: none;
-        }
-        
-        .story-context-menu.show {
-            display: block;
-            pointer-events: auto;
-        }
-        
-        .context-menu-item {
-            padding: 10px 12px;
-            color: var(--discord-text-normal);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.85rem;
-            transition: background-color 0.15s ease;
-        }
-        
-        .context-menu-item:hover {
-            background-color: var(--discord-darker);
-            color: var(--discord-text-light);
-        }
-        
-        .context-menu-item i {
-            color: var(--discord-text-muted);
-            width: 16px;
-            font-size: 0.8rem;
-        }
-        
-        .context-menu-item:hover i {
-            color: var(--discord-accent);
-        }
-
-        .context-menu-item.delete:hover {
-            color: var(--discord-danger);
-        }
-
-        .context-menu-item.delete:hover i {
-            color: var(--discord-danger);
-        }
-        
-        /* Modal Styles */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
-            z-index: 2000;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-        }
-        
-        .modal-overlay.show {
-            display: flex;
-            opacity: 1;
-        }
-        
-        .modal-content {
-            background: var(--discord-darkest);
-            border: 1px solid var(--discord-border);
-            border-radius: 8px;
-            width: 90%;
-            max-width: 500px;
-            max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .modal-header {
-            padding: 16px 20px;
-            border-bottom: 1px solid var(--discord-border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .modal-header h5 {
-            margin: 0;
-            color: var(--discord-text-light);
-            font-size: 1.1rem;
-        }
-        
-        .modal-close {
-            background: transparent;
-            border: none;
-            color: var(--discord-text-muted);
-            font-size: 1.2rem;
-            cursor: pointer;
-            padding: 4px;
-            transition: color 0.2s ease;
-        }
-        
-        .modal-close:hover {
-            color: var(--discord-text-light);
-        }
-        
-        .modal-body {
-            padding: 20px;
-            flex: 1;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        .form-group:last-child {
-            margin-bottom: 0;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: var(--discord-text-normal);
-            font-size: 0.9rem;
-            font-weight: 500;
-        }
-        
-        .form-group .form-control {
-            width: 100%;
-            background-color: var(--discord-user-message);
-            border: 1px solid var(--discord-border);
-            border-radius: 6px;
-            color: var(--discord-text-normal);
-            padding: 10px 12px;
-            font-size: 0.9rem;
-        }
-        
-        .form-group .form-control:focus {
-            outline: none;
-            border-color: var(--discord-accent);
-        }
-        
-        .modal-footer {
-            padding: 16px 20px;
-            border-top: 1px solid var(--discord-border);
-            display: flex;
-            justify-content: flex-end;
-            gap: 12px;
-        }
-        
-        .btn {
-            padding: 8px 16px;
-            border-radius: 6px;
-            border: none;
-            font-size: 0.9rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        
-        .btn-primary {
-            background-color: var(--discord-accent);
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background-color: var(--discord-accent-hover);
-        }
-        
-        .btn-secondary {
-            background-color: var(--discord-darker);
-            color: var(--discord-text-normal);
-            border: 1px solid var(--discord-border);
-        }
-        
-        .btn-secondary:hover {
-            background-color: var(--discord-border);
-        }
-        
-        /* Modal dropdown styling */
-        .modal-body .custom-select-wrapper {
-            position: relative;
-        }
-        
-        .modal-body .custom-select {
-            background: var(--discord-user-message);
-            border: 1px solid var(--discord-border);
-            border-radius: 6px;
-            padding: 8px 12px;
-        }
-        
-        .modal-body .custom-select:hover {
-            border-color: var(--discord-accent);
-            background: var(--discord-darker);
-        }
-        
-        .modal-body .custom-select-value {
-            font-size: 0.9rem;
-        }
-        
-        .modal-body .custom-select-dropdown {
-            z-index: 2001;
-        }
-    </style>
 </head>
 <body>
     <div class="main-container">
@@ -546,9 +56,41 @@
                 {% endfor %}
             </ul>
             <div class="sidebar-footer">
-                <button class="theme-toggle-btn" id="theme-toggle-btn" title="Toggle theme">
+                <button class="theme-toggle-btn" id="theme-toggle-btn" title="Change theme">
                     <i class="fas fa-palette"></i>
                 </button>
+                <div class="theme-picker" id="theme-picker">
+                    <div class="theme-picker-grid">
+                        <button class="theme-option" data-theme="discord">
+                            <div class="theme-swatch" style="background: linear-gradient(135deg, #2b2d31 50%, #5865f2 50%)"></div>
+                            <span>Discord</span>
+                        </button>
+                        <button class="theme-option" data-theme="green-lamp">
+                            <div class="theme-swatch" style="background: linear-gradient(135deg, #0f1a14 50%, #b8a44c 50%)"></div>
+                            <span>Green Lamp</span>
+                        </button>
+                        <button class="theme-option" data-theme="gruvbox-dark">
+                            <div class="theme-swatch" style="background: linear-gradient(135deg, #2c2c2c 50%, #83a598 50%)"></div>
+                            <span>Gruvbox</span>
+                        </button>
+                        <button class="theme-option" data-theme="leather-gilt">
+                            <div class="theme-swatch" style="background: linear-gradient(135deg, #1f1812 50%, #c9a84c 50%)"></div>
+                            <span>Leather & Gilt</span>
+                        </button>
+                        <button class="theme-option" data-theme="parchment">
+                            <div class="theme-swatch" style="background: linear-gradient(135deg, #ede4d3 50%, #8b2d2d 50%)"></div>
+                            <span>Parchment</span>
+                        </button>
+                        <button class="theme-option" data-theme="study">
+                            <div class="theme-swatch" style="background: linear-gradient(135deg, #e4e8ec 50%, #2e6e4e 50%)"></div>
+                            <span>Study</span>
+                        </button>
+                        <button class="theme-option" data-theme="tavern">
+                            <div class="theme-swatch" style="background: linear-gradient(135deg, #1b1511 50%, #d4a24c 50%)"></div>
+                            <span>Tavern</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -585,7 +127,7 @@
             </div>
             <div class="welcome-container" id="welcome-container">
                 <p>Select an existing story from the sidebar or create a new one to begin your adventure.</p>
-                <i class="fas fa-dice-d20 fa-3x" style="color: var(--discord-accent); opacity: 0.8; margin-bottom: 20px;"></i>
+                <i class="fas fa-dice-d20 fa-3x" style="color: var(--accent); opacity: 0.8; margin-bottom: 20px;"></i>
             </div>
 
             <!-- Floating corner buttons -->
@@ -621,6 +163,15 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Right sidebar: story files -->
+        <div class="right-sidebar" id="right-sidebar">
+            <div class="right-sidebar-resize" id="right-sidebar-resize"></div>
+            <div class="sidebar-header">
+                <h5 class="sidebar-title">Story Files</h5>
+            </div>
+            <ul class="file-list" id="file-list"></ul>
         </div>
     </div>
 
@@ -705,6 +256,19 @@
         </div>
     </div>
 
+    <!-- Confirm Popup (custom replacement for browser confirm()) -->
+    <div id="confirm-popup-overlay" class="modal-overlay">
+        <div class="confirm-popup-content">
+            <div class="confirm-popup-body">
+                <p id="confirm-popup-message"></p>
+            </div>
+            <div class="confirm-popup-footer">
+                <button class="btn btn-secondary" id="confirm-popup-cancel">Cancel</button>
+                <button class="btn btn-primary" id="confirm-popup-confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Select Story System/Model Modal -->
     <div id="select-story-config-modal" class="modal-overlay">
         <div class="modal-content">
@@ -715,7 +279,7 @@
                 </button>
             </div>
             <div class="modal-body">
-                <p style="margin-bottom: 20px; color: var(--discord-text-normal);">This story needs a system and model to be configured.</p>
+                <p style="margin-bottom: 20px; color: var(--text-normal);">This story needs a system and model to be configured.</p>
                 <div class="form-group">
                     <label class="select-label">System</label>
                     <div class="custom-select-wrapper">
@@ -815,8 +379,38 @@
         </div>
     </div>
 
+    <!-- Debug Messages Modal -->
+    <div id="debug-modal" class="modal-overlay">
+        <div class="debug-modal-content">
+            <div class="debug-modal-header">
+                <h5><i class="fas fa-code"></i> Conversation Debug</h5>
+                <button class="modal-close" id="debug-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="debug-modal-body" id="debug-modal-body">
+            </div>
+        </div>
+    </div>
+
+    <!-- File Viewer Overlay -->
+    <div id="file-viewer-overlay" class="modal-overlay">
+        <div class="file-viewer-content">
+            <div class="file-viewer-header">
+                <h5 id="file-viewer-title"></h5>
+                <button class="modal-close" id="file-viewer-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="file-viewer-main">
+                <nav class="file-viewer-toc" id="file-viewer-toc"></nav>
+                <div class="file-viewer-body" id="file-viewer-body"></div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="{{ url_for('static', filename='main.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>
