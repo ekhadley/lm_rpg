@@ -151,6 +151,20 @@ def delete_story(data: dict[str, str]):
     else:
         emit('error', {"message": f"Story '{story_name}' not found"})
 
+@socket.on('get_system_instructions')
+def get_system_instructions():
+    global narrator
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
+    filepath = f"./systems/{narrator.system_name}/instructions.md"
+    if not os.path.exists(filepath):
+        emit('error', {"message": "System instructions not found"})
+        return
+    with open(filepath, 'r') as f:
+        content = f.read()
+    emit('story_file_content', {"filename": f"{narrator.system_name}/instructions.md", "content": content})
+
 @socket.on('get_story_file')
 def get_story_file(data: dict[str, str]):
     global narrator

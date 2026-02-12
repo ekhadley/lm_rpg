@@ -441,7 +441,7 @@ body {
     width: var(--right-sidebar-width);
     background-color: var(--sidebar);
     height: 100%;
-    overflow-y: auto;
+    overflow: visible;
     border-left: 1px solid var(--border);
     display: none;
     flex-direction: column;
@@ -497,6 +497,20 @@ body {
     flex-shrink: 0;
 }
 
+.right-sidebar-footer {
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.system-instructions-item {
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+.system-instructions-item:hover {
+    opacity: 1;
+}
+
 /* File Viewer Overlay */
 .file-viewer-content {
     background: var(--bg-deep);
@@ -540,6 +554,23 @@ body {
     padding: 16px 0;
     border-right: 1px solid var(--border);
     font-family: var(--font-primary);
+    position: relative;
+}
+
+.file-viewer-toc-resize {
+    position: absolute;
+    right: -2px;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    cursor: col-resize;
+    z-index: 20;
+}
+
+.file-viewer-toc-resize:hover,
+.file-viewer-toc-resize.active {
+    background-color: var(--accent);
+}
     font-size: 0.8rem;
 }
 
@@ -549,11 +580,12 @@ body {
 
 .file-viewer-toc a {
     display: block;
-    padding: 4px 16px;
+    padding: 4px 16px 4px 24px;
     color: var(--text-muted);
     text-decoration: none;
     line-height: 1.4;
     transition: color 0.15s ease, background-color 0.15s ease;
+    position: relative;
 }
 
 .file-viewer-toc a:hover {
@@ -561,17 +593,18 @@ body {
     background-color: var(--sidebar-active);
 }
 
-.file-viewer-toc a.toc-h2 { padding-left: 28px; }
-.file-viewer-toc a.toc-h3 { padding-left: 40px; font-size: 0.75rem; }
-.file-viewer-toc a.toc-h4 { padding-left: 52px; font-size: 0.75rem; }
+.file-viewer-toc a.toc-h2 { padding-left: 36px; }
+.file-viewer-toc a.toc-h3 { padding-left: 48px; font-size: 0.75rem; }
+.file-viewer-toc a.toc-h4 { padding-left: 60px; font-size: 0.75rem; }
 
 .file-viewer-toc .toc-chevron {
-    font-size: 0.55rem;
-    margin-right: 5px;
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.7rem;
     opacity: 0.5;
     transition: transform 0.15s ease, opacity 0.15s ease;
-    display: inline-block;
-    width: 0.6em;
 }
 
 .file-viewer-toc a:hover .toc-chevron {
@@ -579,7 +612,7 @@ body {
 }
 
 .file-viewer-toc a.collapsed .toc-chevron {
-    transform: rotate(-90deg);
+    transform: translateY(-50%) rotate(-90deg);
 }
 
 .file-viewer-toc a.toc-hidden {

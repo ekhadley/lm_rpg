@@ -323,6 +323,11 @@ export function initStory() {
                 fileList.appendChild(li);
             });
         }
+        // Update system instructions label
+        const label = document.getElementById('system-instructions-label');
+        if (label && data.system_name) {
+            label.textContent = data.system_name + ' instructions';
+        }
     });
 
     // File list click handler
@@ -334,6 +339,12 @@ export function initStory() {
         });
     }
 
+    // System instructions click handler
+    const sysInstrBtn = document.getElementById('system-instructions-btn');
+    if (sysInstrBtn) {
+        sysInstrBtn.addEventListener('click', () => socket.emit('get_system_instructions'));
+    }
+
     // File viewer response
     socket.on('story_file_content', function(data) {
         if (!fileViewerOverlay) return;
@@ -343,6 +354,32 @@ export function initStory() {
         // Build TOC from rendered headings
         if (fileViewerToc) {
             fileViewerToc.innerHTML = '';
+            // Add resize handle
+            const tocResize = document.createElement('div');
+            tocResize.className = 'file-viewer-toc-resize';
+            fileViewerToc.appendChild(tocResize);
+            let tocResizing = false;
+            tocResize.addEventListener('mousedown', function(e) {
+                tocResizing = true;
+                tocResize.classList.add('active');
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+            document.addEventListener('mousemove', function(e) {
+                if (!tocResizing) return;
+                const tocRect = fileViewerToc.getBoundingClientRect();
+                const newWidth = Math.max(100, Math.min(400, e.clientX - tocRect.left));
+                fileViewerToc.style.width = newWidth + 'px';
+            });
+            document.addEventListener('mouseup', function() {
+                if (!tocResizing) return;
+                tocResizing = false;
+                tocResize.classList.remove('active');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            });
+
             const headings = fileViewerBody.querySelectorAll('h1, h2, h3, h4');
             const tocLinks = [];
             headings.forEach((h, i) => {
