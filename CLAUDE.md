@@ -32,7 +32,10 @@ Requires `OPENROUTER_API_KEY` in `.env`. Set `DEBUG=1` for verbose logging.
 - `frontend/templates/index.html` — Single-page app: left sidebar (story list), chat area, right sidebar (story files + system instructions)
 - `frontend/static/main.js` — Entry point, imports and initializes all modules
 - `frontend/static/state.js` — Centralized state, DOM references, socket connection
-- `frontend/static/chat.js` — SocketIO message handlers, Markdown rendering (Marked.js), side button system, retry, debug viewer
+- `frontend/static/chat.js` — SocketIO message handlers, Markdown rendering (Marked.js), history rendering, `initChat()` wires all socket events
+- `frontend/static/sideButtons.js` — Side button system (thinking, dice, tool call buttons with hover popups), assistant turn wrapper management
+- `frontend/static/messageActions.js` — Retry and edit-message UI (confirmation popups, DOM manipulation, history truncation)
+- `frontend/static/debugViewer.js` — Debug conversation viewer modal (`exportConversation`, message rendering with expandable rows)
 - `frontend/static/story.js` — Story list CRUD, context menu, file viewer with collapsible TOC, right sidebar resize
 - `frontend/static/ui.js` — Popups (hover + pinnable), cost display, archive/confirm dialogs, theme system
 - `frontend/static/dropdowns.js` — Custom dropdown component with keyboard navigation
