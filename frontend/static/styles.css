@@ -1044,7 +1044,7 @@ body {
     display: none;
 }
 
-/* Message Actions (Retry Button) - shown inline at end of narrator text */
+/* Message Actions (Retry/Edit Buttons) - shown inline at end of message text */
 .message-actions {
     display: inline-flex;
     margin-left: 0.5em;
@@ -1053,7 +1053,8 @@ body {
     vertical-align: middle;
 }
 
-.assistant-turn-wrapper:hover .message-actions {
+.assistant-turn-wrapper:hover .message-actions,
+.message:hover .message-actions {
     opacity: 1;
 }
 
@@ -1080,6 +1081,90 @@ body {
 .retry-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+}
+
+/* Edit Button */
+.edit-button {
+    background-color: transparent;
+    color: var(--text-muted);
+    border: none;
+    border-radius: 4px;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.75rem;
+}
+
+.edit-button:hover {
+    color: var(--accent);
+    background-color: rgb(from var(--accent) r g b / 0.1);
+}
+
+/* Inline editing mode */
+.user-message.editing {
+    text-align: left;
+    font-style: normal;
+    width: 100%;
+}
+
+.edit-textarea {
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--accent);
+    font-family: 'EB Garamond', Georgia, serif;
+    font-size: var(--prose-font-size);
+    line-height: var(--prose-line-height);
+    padding: 0.5em;
+    resize: vertical;
+    text-align: center;
+}
+
+.edit-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.edit-actions {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.edit-save-btn, .edit-cancel-btn {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+}
+
+.edit-save-btn {
+    color: var(--success);
+}
+
+.edit-save-btn:hover {
+    background-color: rgb(from var(--success) r g b / 0.15);
+}
+
+.edit-cancel-btn {
+    color: var(--danger);
+}
+
+.edit-cancel-btn:hover {
+    background-color: rgb(from var(--danger) r g b / 0.15);
 }
 
 /* Assistant Turn Wrapper - contains side buttons and message */

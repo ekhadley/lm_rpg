@@ -231,6 +231,26 @@ def retry_response(data=None):
                 narrator.saveMessages()
                 return
 
+@socket.on('edit_message')
+def edit_message(data):
+    global narrator
+    assert narrator is not None, "Narrator has not been initialized."
+    messages = narrator.provider.messages
+    turn_index = data.get('turn_index')
+    new_content = data.get('new_content', '')
+    assert turn_index is not None and new_content, "turn_index and new_content are required."
+
+    user_count = 0
+    for i, msg in enumerate(messages):
+        if msg.get("role") == "user":
+            if user_count == turn_index:
+                messages[i]["content"] = new_content
+                narrator.provider.messages = messages[:i + 1]
+                narrator.provider.run()
+                narrator.saveMessages()
+                return
+            user_count += 1
+
 def get_stories_with_info():
     """Helper to load all stories with their info."""
     stories_with_info = []
