@@ -2,7 +2,8 @@ import { userInput, archivePopup, archiveButton, selectStoryConfigModal, copySto
 import { setPendingStoryName } from './state.js';
 import { initAllDropdowns } from './dropdowns.js';
 import { initStory, selectStoryDirectly, closeCopyStoryModal } from './story.js';
-import { initChat, exportConversation } from './chat.js';
+import { initChat } from './chat.js';
+import { exportConversation } from './debugViewer.js';
 import {
     setupCostPopupBehavior, initTheme,
     showArchivePopup, hideArchivePopup, positionArchivePopup,

@@ -67,7 +67,9 @@ def select_story(data: dict[str, str]):
 @socket.on('user_message')
 def handle_user_message(data: dict[str, str]):
     global narrator
-    assert narrator is not None, f"Narrator has not been initialized."
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
     narrator.handleUserMessage(data)
 
 @socket.on('create_story')
@@ -209,7 +211,9 @@ def get_debug_messages():
 @socket.on('retry_response')
 def retry_response(data=None):
     global narrator
-    assert narrator is not None, "Narrator has not been initialized."
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
     messages = narrator.provider.messages
     turn_index = data.get('turn_index') if data else None
 
@@ -234,11 +238,15 @@ def retry_response(data=None):
 @socket.on('edit_message')
 def edit_message(data):
     global narrator
-    assert narrator is not None, "Narrator has not been initialized."
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
     messages = narrator.provider.messages
     turn_index = data.get('turn_index')
     new_content = data.get('new_content', '')
-    assert turn_index is not None and new_content, "turn_index and new_content are required."
+    if turn_index is None or not new_content:
+        emit('error', {"message": "turn_index and new_content are required"})
+        return
 
     user_count = 0
     for i, msg in enumerate(messages):
