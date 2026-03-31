@@ -23,7 +23,7 @@ Runs on `http://localhost:5001`. Set `DEBUG=1` for verbose logging.
 
 ## How It Works
 
-The LM receives a system prompt assembled from a core instructions file and (optionally) story-specific context: a story plan, player character sheet, and running summary. It responds with narration and can make tool calls — rolling dice, reading/writing files in the story directory — to manage game state across turns.
+The LM receives a system prompt assembled from a core instructions file (core.md)  and (optionally) story-specific context: a story plan, player character sheet, and running summary. It responds with narration and can make tool calls — rolling dice, reading/writing files in the story directory — to manage game state across turns.
 
 Conversations are stored as JSON in each story's directory and can be archived to start fresh while keeping history accessible.
 
@@ -36,7 +36,9 @@ A game system is defined by:
 
 The core instructions (`instructions/core.md`) define system-agnostic GM behavior: how to handle player intent, when to roll dice, how to narrate. Each game system's instructions layer on top of that with specific mechanics and setting.
 
-Current systems include D&D 5e (hard system with full mechanical resolution) and a Harry Potter setting (soft system with freeform dice).
+Game systems are divided into 'hard' systems and 'soft' systems. Hard systems are more like typical DnD (more dice rolling, characters with speficic stat sheets, predefined ability mechanics, etc), soft systems are more like a choose your own adventure type resolution system (outcomes determined more by holistic GM discretion and narrative considerations), although dice are still used where randomness is needed. core.md references both types and how to run them.
+
+Current systems include D&D 5e (hard), Harry Potter (hard), and Game of Thrones (soft).
 
 ## Stories
 
