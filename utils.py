@@ -56,7 +56,7 @@ logger = setup_logger()
 
 STORIES_ROOT_DIR = "stories"
 STORIES_ARCHIVE_DIR = "stories/.archived"
-GAME_SYSTEMS_ROOT_DIR = "systems"
+INSTRUCTIONS_DIR = "instructions"
 
 def listStoryNames() -> list[str]:
     return sorted(f for f in os.listdir("./stories") if not f.startswith('.'))
@@ -68,8 +68,8 @@ def listStoryMarkdownFiles(story_name: str) -> list[str]:
     return sorted(f for f in os.listdir(story_dir) if f.endswith('.md'))
 
 def _system_has_instructions(system_name: str) -> bool:
-    """Returns True only if the system has a base instructions.md file."""
-    return os.path.exists(f"{GAME_SYSTEMS_ROOT_DIR}/{system_name}/instructions.md")
+    """Returns True only if the system has an instructions file."""
+    return os.path.exists(f"{INSTRUCTIONS_DIR}/{system_name}.md")
 
 def isValidGameSystem(system_name: str) -> bool:
     """Public validator to ensure the requested system has the required assets."""
@@ -77,7 +77,7 @@ def isValidGameSystem(system_name: str) -> bool:
 
 def listGameSystemNames() -> list[str]:
     """Only return systems that are actually usable (have instructions)."""
-    return sorted([name for name in os.listdir(f"{GAME_SYSTEMS_ROOT_DIR}") if _system_has_instructions(name)])
+    return sorted([f.removesuffix('.md') for f in os.listdir(INSTRUCTIONS_DIR) if f.endswith('.md')])
 
 def makeNewStoryDir(story_name: str, system: str, model_name: str):
     story_dir = f"./stories/{story_name}"
@@ -128,11 +128,16 @@ def getFullStoryInstruction(system_name: str, story_name: str) -> str:
     - <story_summary>: Summary of story events so far
     """
     result_parts = []
-    
-    # Load global instructions (required)
-    with open(f"{GAME_SYSTEMS_ROOT_DIR}/{system_name}/instructions.md", 'r') as f:
-        global_instructions = f.read()
-    result_parts.append(f"<global_instructions>\n{global_instructions}\n</global_instructions>")
+
+    # Load core instructions (required, shared across all systems)
+    with open(f"{INSTRUCTIONS_DIR}/core.md", 'r') as f:
+        core_instructions = f.read()
+    result_parts.append(f"<core_instructions>\n{core_instructions}\n</core_instructions>")
+
+    # Load system-specific instructions (required)
+    with open(f"{INSTRUCTIONS_DIR}/{system_name}.md", 'r') as f:
+        system_instructions = f.read()
+    result_parts.append(f"<system_instructions>\n{system_instructions}\n</system_instructions>")
     
     # Load story plan (optional)
     story_plan_path = f"{STORIES_ROOT_DIR}/{story_name}/story_plan.md"

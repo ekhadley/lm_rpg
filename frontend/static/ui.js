@@ -1,7 +1,7 @@
 import {
     chatHistory, userInput,
     archiveButton, archivePopup, archivePopupCancel, archivePopupConfirm,
-    costButton, costPopup, costTotalTokens, costAvgTokens, costTotalCost, costAvgCost,
+    costButton, costPopup, costTotalTokens, costAvgTokens, costTotalCost, costAvgCost, costLastTurn,
     themeToggleBtn,
 } from './state.js';
 
@@ -113,6 +113,7 @@ export function updateCostDisplay(stats) {
     if (costAvgTokens) costAvgTokens.textContent = stats.avg_tokens_per_turn.toLocaleString();
     if (costTotalCost) costTotalCost.textContent = '$' + stats.total_cost.toFixed(4);
     if (costAvgCost) costAvgCost.textContent = '$' + stats.avg_cost_per_turn.toFixed(4);
+    if (costLastTurn) costLastTurn.textContent = '$' + (stats.last_turn_cost || 0).toFixed(4);
 }
 
 export function setupCostPopupBehavior() {

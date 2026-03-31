@@ -2,6 +2,7 @@ import {
     chatHistory,
     currentNarratorMessageElement,
     currentTurnToolCalls, currentTurnThinking,
+    setCurrentTurnThinking,
     isToolCallInProgress, isThinkingInProgress,
 } from './state.js';
 import { setupPopupBehavior } from './ui.js';
@@ -14,6 +15,29 @@ export function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Append dice roll results to thinking text as {{DICE:...}} markers
+export function appendDiceToThinking(rolls) {
+    const diceStr = rolls.map(r => r.expr + '→' + r.result).join(', ');
+    let thinking = currentTurnThinking || '';
+    if (thinking.match(/\{\{DICE:[^}]+\}\}$/)) {
+        thinking = thinking.replace(/\}\}$/, ', ' + diceStr + '}}');
+    } else {
+        thinking += '\n{{DICE:' + diceStr + '}}';
+    }
+    setCurrentTurnThinking(thinking);
+}
+
+// Render thinking text with inline dice roll markers as styled HTML
+function renderThinkingContent(text) {
+    if (!text) return 'Thinking...';
+    const parts = text.split(/({{DICE:[^}]+}})/g);
+    return parts.map(part => {
+        const match = part.match(/^{{DICE:(.+)}}$/);
+        if (match) return '<span class="dice-inline">' + escapeHtml(match[1]) + '</span>';
+        return escapeHtml(part);
+    }).join('');
+}
+
 function formatToolData(data) {
     if (typeof data === 'string') {
         if (data.length > TOOL_DATA_MAX_LEN) return '<code>' + escapeHtml(data.substring(0, TOOL_DATA_MAX_LEN)) + '...</code>';
@@ -24,16 +48,6 @@ function formatToolData(data) {
         return '<code>' + escapeHtml(jsonStr) + '</code>';
     }
     return '<code>' + escapeHtml(String(data)) + '</code>';
-}
-
-export function splitToolCalls(toolCalls) {
-    const diceRolls = [];
-    const otherTools = [];
-    toolCalls.forEach(tool => {
-        if (tool.name === 'roll_dice') diceRolls.push(tool);
-        else otherTools.push(tool);
-    });
-    return { diceRolls, otherTools };
 }
 
 export function createThinkingButton(thinkingContent, isAnimating) {
@@ -49,35 +63,7 @@ export function createThinkingButton(thinkingContent, isAnimating) {
     popupHeader.innerHTML = '<i class="fas fa-gears"></i> Reasoning';
     const popupContent = document.createElement('div');
     popupContent.className = 'popup-content';
-    popupContent.textContent = thinkingContent;
-    popup.appendChild(popupHeader);
-    popup.appendChild(popupContent);
-    container.appendChild(button);
-    container.appendChild(popup);
-    setupPopupBehavior(container, button, popup);
-    return container;
-}
-
-export function createDiceButton(diceRolls, isAnimating) {
-    const container = document.createElement('div');
-    container.className = 'side-button-container';
-    const button = document.createElement('button');
-    button.className = 'side-button dice-button' + (isAnimating ? ' animating' : '');
-    button.innerHTML = '<i class="fas fa-dice-d20"></i>';
-    const popup = document.createElement('div');
-    popup.className = 'side-button-popup dice-popup';
-    const popupHeader = document.createElement('div');
-    popupHeader.className = 'popup-header';
-    popupHeader.innerHTML = '<i class="fas fa-dice-d20"></i> Dice Rolls (' + diceRolls.length + ')';
-    const popupContent = document.createElement('div');
-    popupContent.className = 'popup-content';
-    diceRolls.forEach(roll => {
-        const rollItem = document.createElement('div');
-        rollItem.className = 'dice-roll-item';
-        const diceExpr = roll.inputs.dice || roll.inputs.expression || '?';
-        rollItem.innerHTML = '<span class="dice-expr">' + escapeHtml(diceExpr) + '</span><span class="dice-arrow">→</span><span class="dice-result">' + escapeHtml(String(roll.result)) + '</span>';
-        popupContent.appendChild(rollItem);
-    });
+    popupContent.innerHTML = renderThinkingContent(thinkingContent);
     popup.appendChild(popupHeader);
     popup.appendChild(popupContent);
     container.appendChild(button);
@@ -178,12 +164,8 @@ export function updateSideButtonsAnimated() {
     if (currentTurnThinking || isThinkingInProgress) {
         sideButtons.appendChild(createThinkingButton(currentTurnThinking || 'Thinking...', isThinkingInProgress));
     }
-    const { diceRolls, otherTools } = splitToolCalls(currentTurnToolCalls);
-    if (diceRolls.length > 0) {
-        sideButtons.appendChild(createDiceButton(diceRolls, isToolCallInProgress));
-    }
-    if (otherTools.length > 0 || isToolCallInProgress) {
-        sideButtons.appendChild(createToolButton(otherTools.length > 0 ? otherTools : [], isToolCallInProgress));
+    if (currentTurnToolCalls.length > 0 || isToolCallInProgress) {
+        sideButtons.appendChild(createToolButton(currentTurnToolCalls.length > 0 ? currentTurnToolCalls : [], isToolCallInProgress));
     }
 }
 
@@ -193,7 +175,7 @@ export function updateThinkingPopupContent() {
     if (!wrapper) return;
     const thinkingPopup = wrapper.querySelector('.thinking-popup .popup-content');
     if (thinkingPopup) {
-        thinkingPopup.textContent = currentTurnThinking || 'Thinking...';
+        thinkingPopup.innerHTML = renderThinkingContent(currentTurnThinking);
         thinkingPopup.scrollTop = thinkingPopup.scrollHeight;
     }
 }
@@ -203,11 +185,7 @@ export function buildFinalSideButtons(sideButtons) {
     if (currentTurnThinking) {
         sideButtons.appendChild(createThinkingButton(currentTurnThinking, false));
     }
-    const { diceRolls, otherTools } = splitToolCalls(currentTurnToolCalls);
-    if (diceRolls.length > 0) {
-        sideButtons.appendChild(createDiceButton(diceRolls, false));
-    }
-    if (otherTools.length > 0) {
-        sideButtons.appendChild(createToolButton(otherTools, false));
+    if (currentTurnToolCalls.length > 0) {
+        sideButtons.appendChild(createToolButton(currentTurnToolCalls, false));
     }
 }

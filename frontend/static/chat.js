@@ -11,9 +11,10 @@ import {
 } from './state.js';
 import { scrollToBottom, hideTypingIndicator, updateCostDisplay } from './ui.js';
 import {
-    splitToolCalls, createThinkingButton, createDiceButton, createToolButton,
+    createThinkingButton, createToolButton,
     ensureAssistantTurnWrapper, updateSideButtonsAnimated,
     updateThinkingPopupContent, buildFinalSideButtons,
+    appendDiceToThinking,
 } from './sideButtons.js';
 import { addRetryButton, addEditButton } from './messageActions.js';
 
@@ -48,7 +49,11 @@ function addUserMessage(message, disableInput = true) {
 
 // Add thinking from history (collect for turn)
 function addThinkingFromHistory(thinkingContent) {
-    setCurrentTurnThinking(thinkingContent);
+    if (currentTurnThinking) {
+        setCurrentTurnThinking(currentTurnThinking + '\n' + thinkingContent);
+    } else {
+        setCurrentTurnThinking(thinkingContent);
+    }
 }
 
 // Add assistant message from history
@@ -62,12 +67,8 @@ function addAssistantMessageFromHistory(content, addRetry = false) {
     if (currentTurnThinking) {
         sideButtons.appendChild(createThinkingButton(currentTurnThinking, false));
     }
-    const { diceRolls, otherTools } = splitToolCalls(currentTurnToolCalls);
-    if (diceRolls.length > 0) {
-        sideButtons.appendChild(createDiceButton(diceRolls, false));
-    }
-    if (otherTools.length > 0) {
-        sideButtons.appendChild(createToolButton(otherTools, false));
+    if (currentTurnToolCalls.length > 0) {
+        sideButtons.appendChild(createToolButton(currentTurnToolCalls, false));
     }
     messageWrapper.appendChild(sideButtons);
 
@@ -91,7 +92,12 @@ function addToolUseToHistory(data) {
         if (typeof inputs === 'string') {
             try { inputs = JSON.parse(inputs); } catch (e) { inputs = {}; }
         }
-        calls.push({ name: tool.name, inputs: inputs, result: tool.result });
+        if (tool.name === 'roll_dice') {
+            const expr = (inputs.dice || inputs.expression || '?');
+            appendDiceToThinking([{ expr, result: tool.result }]);
+        } else {
+            calls.push({ name: tool.name, inputs: inputs, result: tool.result });
+        }
     });
     setCurrentTurnToolCalls(calls);
 }
@@ -194,7 +200,7 @@ export function initChat() {
     socket.on('think_start', function() {
         console.log('Model started thinking');
         setIsThinkingInProgress(true);
-        setCurrentTurnThinking('');
+        // Don't reset thinking — accumulate across tool-call rounds so dice rolls appear in context
         ensureAssistantTurnWrapper();
         updateSideButtonsAnimated();
     });
@@ -282,14 +288,23 @@ export function initChat() {
 
         const calls = [...currentTurnToolCalls];
         const hist = [...conversationHistory];
+        const diceRolls = [];
         data.tools.forEach(tool => {
             let inputs = tool.inputs;
             if (typeof inputs === 'string') {
                 try { inputs = JSON.parse(inputs); } catch (e) { inputs = {}; }
             }
-            calls.push({ name: tool.name, inputs: inputs, result: tool.result });
             hist.push({ role: 'tool', name: tool.name, inputs: tool.inputs, result: tool.result, timestamp: new Date().toISOString() });
+            if (tool.name === 'roll_dice') {
+                diceRolls.push({ expr: inputs.dice || inputs.expression || '?', result: tool.result });
+            } else {
+                calls.push({ name: tool.name, inputs: inputs, result: tool.result });
+            }
         });
+        if (diceRolls.length > 0) {
+            appendDiceToThinking(diceRolls);
+            updateThinkingPopupContent();
+        }
         setCurrentTurnToolCalls(calls);
         setConversationHistory(hist);
 

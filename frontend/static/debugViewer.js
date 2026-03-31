@@ -64,7 +64,7 @@ function renderDebugMessages(messages) {
         preview.textContent = getPreview(msg);
         header.appendChild(preview);
 
-        // Right-aligned stats (tokens + cost)
+        // Right-aligned stats (tokens + cost + cache)
         if (msg.role === 'assistant' && msg.usage) {
             const rightStats = document.createElement('span');
             rightStats.className = 'debug-right-stats';
@@ -74,6 +74,22 @@ function renderDebugMessages(messages) {
             tokens.className = 'debug-tokens';
             tokens.textContent = total.toLocaleString() + ' tok';
             rightStats.appendChild(tokens);
+
+            // Cache info
+            const details = msg.usage.prompt_tokens_details;
+            if (details) {
+                const cached = details.cached_tokens || 0;
+                const written = details.cache_write_tokens || 0;
+                if (cached > 0 || written > 0) {
+                    const cache = document.createElement('span');
+                    cache.className = 'debug-cache';
+                    let parts = [];
+                    if (written > 0) parts.push(`<span class="cache-write">+${written.toLocaleString()}</span>`);
+                    if (cached > 0) parts.push(`<span class="cache-hit">-${cached.toLocaleString()}</span>`);
+                    cache.innerHTML = '(' + parts.join('') + ')';
+                    rightStats.appendChild(cache);
+                }
+            }
 
             if (msg.usage.cost !== undefined) {
                 const cost = document.createElement('span');

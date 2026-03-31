@@ -158,11 +158,36 @@ def roll_dice_tool_handler(dice: str, **kwargs) -> int:
         sides = int(sides)
     except ValueError:
         raise ValueError("Invalid number of sides.")
-    
+
     if num < 1:
         raise ValueError("Number of dice must be greater than 0.")
     if sides < 1:
         raise ValueError("Number of sides must be greater than 0.")
-    
+
     rolls = [random.randint(1, sides) for _ in range(num)]
     return sum(rolls)
+
+
+############## system toolboxes ################
+
+BASE_HANDLERS = [
+    list_story_files_tool_handler,
+    read_story_file_tool_handler,
+    write_story_file_tool_handler,
+    append_story_file_tool_handler,
+    roll_dice_tool_handler,
+]
+
+def _make_toolbox(story_name: str, system_name: str, extra_handlers: list[Callable] = []) -> Toolbox:
+    return Toolbox(BASE_HANDLERS + extra_handlers, default_kwargs={"story_name": story_name, "system_name": system_name})
+
+def hp_toolbox(story_name: str, system_name: str) -> Toolbox:
+    return _make_toolbox(story_name, system_name)
+
+def dnd5e_toolbox(story_name: str, system_name: str) -> Toolbox:
+    return _make_toolbox(story_name, system_name)
+
+SYSTEM_TOOLBOXES: dict[str, Callable] = {
+    "hp": hp_toolbox,
+    "dnd5e": dnd5e_toolbox,
+}

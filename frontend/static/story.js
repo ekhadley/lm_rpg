@@ -1,3 +1,5 @@
+const stripProvider = (model) => model ? model.split('/').pop() : model;
+
 import {
     socket, storyList, chatHistory, chatHeader, welcomeWrapper, userInput,
     newStoryBtn, createStoryBtn, createStoryModal, createStoryModalClose, createStoryModalCancel,
@@ -40,7 +42,7 @@ export function selectStoryDirectly(storyTitle) {
     const modelText = storyItem ? storyItem.querySelector('.story-meta').textContent.trim() : '';
     const modelSubtext = document.getElementById('current-story-model');
     if (modelSubtext) {
-        modelSubtext.textContent = modelText;
+        modelSubtext.textContent = stripProvider(modelText);
         modelSubtext.style.display = modelText ? '' : 'none';
     }
     if (chatHistory) chatHistory.innerHTML = '';
@@ -76,7 +78,7 @@ export function addNewStory(story) {
     nameRow.appendChild(nameSpan);
     const metaSpan = document.createElement('span');
     metaSpan.className = 'story-meta';
-    metaSpan.textContent = story.model || 'unknown';
+    metaSpan.textContent = stripProvider(story.model) || 'unknown';
     contentDiv.appendChild(nameRow);
     contentDiv.appendChild(metaSpan);
 
@@ -181,7 +183,7 @@ export function initStory() {
                 storyList.querySelectorAll('.story-item').forEach(item => {
                     if (item.getAttribute('data-story') === pendingStoryName) {
                         const modelSpan = item.querySelector('.story-meta');
-                        if (modelSpan) modelSpan.textContent = modelName;
+                        if (modelSpan) modelSpan.textContent = stripProvider(modelName);
                     }
                 });
             }
@@ -201,7 +203,7 @@ export function initStory() {
             }
             const modelSubtext = document.getElementById('current-story-model');
             if (modelSubtext) {
-                modelSubtext.textContent = modelName;
+                modelSubtext.textContent = stripProvider(modelName);
                 modelSubtext.style.display = modelName ? '' : 'none';
             }
             if (chatHistory) chatHistory.innerHTML = '';
@@ -305,7 +307,7 @@ export function initStory() {
             storyList.querySelectorAll('.story-item').forEach(item => {
                 if (item.getAttribute('data-story') === currentStory) {
                     const modelSpan = item.querySelector('.story-meta');
-                    if (modelSpan && data.model_name) modelSpan.textContent = data.model_name;
+                    if (modelSpan && data.model_name) modelSpan.textContent = stripProvider(data.model_name);
                 }
             });
         }
@@ -326,7 +328,7 @@ export function initStory() {
         // Update system instructions label
         const label = document.getElementById('system-instructions-label');
         if (label && data.system_name) {
-            label.textContent = data.system_name + ' instructions';
+            label.textContent = 'Rulebook';
         }
     });
 

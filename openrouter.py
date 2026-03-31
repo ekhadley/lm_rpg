@@ -49,7 +49,8 @@ class OpenRouterStream:
         )
         if self.response_stream.status_code != 200:
             error_msg = self.response_stream.text.replace("\\n ", "\n ").replace("\\\"", "\"")
-            assert self.response_stream.status_code == 200, f"Error response from OpenRouter: {error_msg}"
+            logger.error(f"HTTP {self.response_stream.status_code} from OpenRouter: {error_msg}")
+            raise RuntimeError(f"HTTP {self.response_stream.status_code} from OpenRouter: {error_msg}")
         self.response_iter = self.response_stream.iter_content(chunk_size=1024, decode_unicode=False)
         
         self.content_stream_finished = False
@@ -198,7 +199,9 @@ class OpenRouterProvider():
         self.thinking_enabled = thinking_effort != "none"
         self.thinking_effort = thinking_effort
         self.usage_history: list[dict] = []  # Track usage per turn
-        
+        self.system_turn_entries: int = 0  # Number of usage entries from the initial system turn
+        self.last_turn_cost: float = 0.0
+
         self.addSystemMessage(system_prompt)
     
     def getCostStats(self) -> dict:
@@ -209,25 +212,36 @@ class OpenRouterProvider():
                 "total_cost": 0.0,
                 "avg_tokens_per_turn": 0,
                 "avg_cost_per_turn": 0.0,
-                "turn_count": 0
+                "turn_count": 0,
+                "last_turn_cost": 0.0
             }
-        
+
         total_tokens = sum(u.get("total_tokens", 0) for u in self.usage_history)
         total_cost = sum(u.get("cost", 0.0) for u in self.usage_history)
-        turn_count = len(self.usage_history)
-        
+
+        # Exclude system turn entries from averages
+        user_entries = self.usage_history[self.system_turn_entries:]
+        user_tokens = sum(u.get("total_tokens", 0) for u in user_entries)
+        user_cost = sum(u.get("cost", 0.0) for u in user_entries)
+        user_turn_count = len(user_entries)
+
         return {
             "total_tokens": total_tokens,
             "total_cost": total_cost,
-            "avg_tokens_per_turn": total_tokens // turn_count if turn_count > 0 else 0,
-            "avg_cost_per_turn": total_cost / turn_count if turn_count > 0 else 0.0,
-            "turn_count": turn_count
+            "avg_tokens_per_turn": user_tokens // user_turn_count if user_turn_count > 0 else 0,
+            "avg_cost_per_turn": user_cost / user_turn_count if user_turn_count > 0 else 0.0,
+            "turn_count": len(self.usage_history),
+            "last_turn_cost": self.last_turn_cost
         }
 
     def addSystemMessage(self, content: str) -> None:
         self.messages.insert(0, {
             "role": "system",
-            "content": content,
+            "content": [{
+                "type": "text",
+                "text": content,
+                "cache_control": {"type": "ephemeral"}
+            }],
         })
     def addUserMessage(self, content: str) -> None:
         self.messages.append({
@@ -256,12 +270,22 @@ class OpenRouterProvider():
 
                     # Update saved system prompt to live version
                     if self.messages and self.messages[0].get("role") == "system":
-                        self.messages[0]["content"] = self.system_prompt
+                        self.messages[0]["content"] = [{
+                            "type": "text",
+                            "text": self.system_prompt,
+                            "cache_control": {"type": "ephemeral"}
+                        }]
 
                     # Reconstruct usage_history from per-message usage data
                     self.usage_history = []
+                    self.system_turn_entries = 0
+                    seen_real_user = False
                     for msg in messages:
+                        if msg.get("role") == "user" and not str(msg.get("content", "")).startswith("System:"):
+                            seen_real_user = True
                         if msg.get("role") == "assistant" and "usage" in msg:
+                            if not seen_real_user:
+                                self.system_turn_entries += 1
                             self.usage_history.append(msg["usage"])
                     
                     return messages
@@ -277,11 +301,25 @@ class OpenRouterProvider():
             key = self.key
         )
 
-    def run(self) -> None:
+    def run(self, system_turn=False) -> None:
+        turn_start = len(self.usage_history)
+        finish_reason = None
+        try:
+            finish_reason = self._run()
+        except Exception as e:
+            logger.error(f"Error during model response: {e}", exc_info=True)
+            finish_reason = "error"
+        turn_entries = self.usage_history[turn_start:]
+        self.last_turn_cost = sum(u.get("cost", 0.0) for u in turn_entries)
+        if system_turn:
+            self.system_turn_entries = len(turn_entries)
+        self.cb.turn_end(cost_stats=self.getCostStats(), finish_reason=finish_reason)
+
+    def _run(self) -> str | None:
+        finish_reason = None
         while True:
             currently_outputting_text = False
             pending_tool_calls = False
-            finish_reason = None
             was_thinking = False
             stream = self.getStream()
 
@@ -309,6 +347,7 @@ class OpenRouterProvider():
                         self.messages[-1]["tool_calls"] = []
                     self.messages[-1]["reasoning"] = ""
                     self.messages[-1]["reasoning_details"] = [{}]
+                    self.messages[-1]["content"] = self.messages[-1].get("content") or ""
 
                 # Handle text content
                 delta_content = delta.get("content")
@@ -365,17 +404,18 @@ class OpenRouterProvider():
 
                 # Handle finish reasons
                 finish_reason = event_item.get("finish_reason")
-                if finish_reason == "stop":
+                if finish_reason:
                     currently_outputting_text = False
                     # Check for non-streamed reasoning in final message
                     final_reasoning = event_item.get("message", {}).get("reasoning") or delta.get("reasoning")
                     if final_reasoning and not self.messages[-1].get("reasoning"):
                         self.messages[-1]["reasoning"] = final_reasoning
                         self.cb.think_output(text=final_reasoning)
-                    continue  # Continue to catch usage chunk
-
-                if finish_reason == "tool_calls":
-                    pending_tool_calls = True
+                    # Detect tool calls from message content, not finish_reason string
+                    if self.messages[-1].get("tool_calls"):
+                        pending_tool_calls = True
+                    if finish_reason not in ("stop", "tool_calls", "end_turn", "tool_use"):
+                        logger.warning(f"Unexpected finish_reason: {finish_reason}")
                     continue  # Continue to catch usage chunk
 
             stream.close()
@@ -404,7 +444,7 @@ class OpenRouterProvider():
 
                 self.cb.tool_submit(names=[tool_name], inputs=[parsed_arguments], results=[tool_result])
 
-        self.cb.turn_end(cost_stats=self.getCostStats(), finish_reason=finish_reason)
+        return finish_reason
 
     def submitToolOutput(self, call_id: str, tool_output: str) -> None:
         self.messages.append({

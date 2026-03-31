@@ -1,34 +1,15 @@
-import os
-import json
-import importlib.util
-
 from utils import getFullStoryInstruction, loadAllPreviousHistory
-from model_tools import Toolbox
+from model_tools import Toolbox, SYSTEM_TOOLBOXES
 from callbacks import WebCallbackHandler
 from openrouter import OpenRouterProvider
 from flask_socketio import SocketIO
-
-SYSTEMS_DIR = "systems"
-
-def makeNarratorToolbox(story_name: str, system_name: str) -> Toolbox:
-    """
-    Dynamically load the system's tools.py and call its make_toolbox().
-    Crashes if tools.py doesn't exist or make_toolbox() fails.
-    """
-    tools_path = os.path.join(SYSTEMS_DIR, system_name, "tools.py")
-    
-    spec = importlib.util.spec_from_file_location(f"{system_name}_tools", tools_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    
-    return module.make_toolbox(story_name, system_name)
     
 class Narrator:
     def __init__(self, model_name: str, story_name: str, system_name: str, socket: SocketIO):
         self.model_name: str = model_name
         self.system_name: str = system_name
         self.story_name: str = story_name
-        self.tb: Toolbox = makeNarratorToolbox(story_name, system_name)
+        self.tb: Toolbox = SYSTEM_TOOLBOXES[system_name](story_name, system_name)
         self.socket: SocketIO = socket
         self.system_prompt = getFullStoryInstruction(system_name, story_name)
         self.story_history_path = f"./stories/{story_name}/history.json"
@@ -52,16 +33,6 @@ class Narrator:
         """Clear all messages from the provider. Used after archiving history."""
         self.provider.messages = []
 
-    @staticmethod
-    def initFromHistory(story_name: str, socket: SocketIO) -> "Narrator":
-        history_path = f"./stories/{story_name}/history.json"
-        with open(history_path) as f:
-            history_data: dict[str, str] = json.load(f)
-            model_name = history_data["model_name"]
-            system_name = history_data["system_name"]
-            return Narrator(model_name, story_name, system_name, socket)
-        
-
     def loadStory(self):
         # Load previous history for UI display (not sent to model)
         previous_messages = loadAllPreviousHistory(self.story_name)
@@ -78,7 +49,7 @@ class Narrator:
             self.socket.emit('conversation_history', frontend_messages)
         elif not previous_messages:
             self.provider.addUserMessage("System: start of story")
-            self.provider.run()
+            self.provider.run(system_turn=True)
             self.saveMessages()
         self.socket.emit('assistant_ready')
         self.socket.emit('turn_end', {"cost_stats": self.provider.getCostStats()})

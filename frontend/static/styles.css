@@ -1224,10 +1224,6 @@ body {
     color: var(--color-thinking);
 }
 
-.side-button.dice-button i {
-    color: var(--color-dice);
-}
-
 .side-button.tool-button i {
     color: var(--color-tools);
 }
@@ -1257,11 +1253,6 @@ body {
 /* Tool button - orange */
 .side-button.tool-button.animating::before {
     border-color: var(--warning);
-}
-
-/* Dice button - green */
-.side-button.dice-button.animating::before {
-    border-color: var(--success);
 }
 
 @keyframes breathing-pulse {
@@ -1329,14 +1320,6 @@ body {
     color: var(--warning);
 }
 
-.dice-popup .popup-header i {
-    color: var(--success);
-}
-
-.dice-popup {
-    width: 120px;
-}
-
 .popup-content {
     padding: 12px;
     max-height: 340px;
@@ -1344,6 +1327,20 @@ body {
     font-size: 0.9rem;
     color: var(--text-normal);
     line-height: 1.6;
+    scrollbar-width: auto;
+}
+.popup-content::-webkit-scrollbar {
+    width: 14px;
+}
+.popup-content::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+.popup-content::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text-muted) 30%, transparent);
+    border-radius: 0;
+}
+.popup-content::-webkit-scrollbar-thumb:hover {
+    background: var(--text-normal);
 }
 
 /* Thinking popup content */
@@ -1401,45 +1398,14 @@ body {
 }
 
 /* Dice roll display in popup */
-.dice-roll-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 8px;
-    background-color: rgb(from var(--success) r g b / 0.1);
-    border-radius: 6px;
-    margin-bottom: 6px;
-}
-
-.dice-roll-item:last-child {
-    margin-bottom: 0;
-}
-
-.dice-expr {
-    font-family: 'Courier New', monospace;
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--text-bright);
-    background-color: var(--bg-alt);
-    padding: 2px 6px;
-    border-radius: 4px;
-}
-
-.dice-arrow {
-    color: var(--text-muted);
-    margin: 0 6px;
-    font-size: 0.75rem;
-}
-
-.dice-result {
-    font-size: 0.95rem;
+/* Inline dice rolls within thinking popup */
+.dice-inline {
+    display: inline-block;
     font-weight: 700;
-    color: var(--success);
-}
-
-/* Dice rolls now shown in tool popup */
-.dice-roll {
-    display: none;
+    color: var(--color-dice);
+    background: rgb(from var(--color-dice) r g b / 0.1);
+    padding: 1px 6px;
+    border-radius: 3px;
 }
 
 /* Input Area */
@@ -2525,6 +2491,20 @@ html, body {
     color: var(--text-muted);
     flex-shrink: 0;
     font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.debug-cache {
+    font-size: 0.7rem;
+    flex-shrink: 0;
+    font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.debug-cache.cache-hit {
+    color: #7cc87c;
+}
+
+.debug-cache.cache-write {
+    color: #c8a87c;
 }
 
 .debug-cost {

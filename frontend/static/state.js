@@ -32,6 +32,7 @@ export const costTotalTokens = document.getElementById('cost-total-tokens');
 export const costAvgTokens = document.getElementById('cost-avg-tokens');
 export const costTotalCost = document.getElementById('cost-total-cost');
 export const costAvgCost = document.getElementById('cost-avg-cost');
+export const costLastTurn = document.getElementById('cost-last-turn');
 export const debugModal = document.getElementById('debug-modal');
 export const debugModalBody = document.getElementById('debug-modal-body');
 export const debugModalClose = document.getElementById('debug-modal-close');

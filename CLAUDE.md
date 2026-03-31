@@ -60,3 +60,4 @@ Requires `OPENROUTER_API_KEY` in `.env`. Set `DEBUG=1` for verbose logging.
 ## TODO
 
 - **Large story plan handling** — Need a solution for very large story plans that blow up the system prompt. Probably a short compacted story plan that goes in the system prompt, plus a guide pointing to the full story plan split across smaller files (readable via `read_file` tool).
+- **Mechanical annotation system** — In D&D, the GM describes damage narratively but also tells you the exact numbers (e.g. "12 points of damage"). Design a formatting system where the narrator can embed annotations in natural prose that are hoverable (or similar) to reveal mechanical specifics (damage numbers, DC checks, modifiers, etc.). Keeps the narrative immersive while still surfacing the crunch on demand.

@@ -20,25 +20,21 @@ global narrator
 narrator = None
 models = [
     "anthropic/claude-opus-4.6",
-    "anthropic/claude-3-5-haiku",
-    "openai/gpt-5.2",
+    "anthropic/claude-haiku-4.5",
+    "openai/gpt-5.4",
     "openai/gpt-4o-mini",
-    "google/gemini-3-pro-preview",
+    "google/gemini-3.1-pro-preview",
     "moonshotai/kimi-k2.5",
 ]
 
 def init_narrator(story_name: str, story_info: dict, model_name: str) -> Narrator:
-    if historyExists(story_name):
-        logger.debug(f"loading existing history for story: '{story_name}'")
-        return Narrator.initFromHistory(story_name, socket)
-    else:
-        logger.debug(f"creating new history for story: '{story_name}'")
-        return Narrator(
-            model_name = model_name,
-            system_name = story_info["system"],
-            story_name = story_name,
-            socket = socket,
-        )
+    logger.debug(f"{'loading existing' if historyExists(story_name) else 'creating new'} history for story: '{story_name}'")
+    return Narrator(
+        model_name = model_name,
+        system_name = story_info["system"],
+        story_name = story_name,
+        socket = socket,
+    )
 
 @socket.on('select_story')
 def select_story(data: dict[str, str]):
@@ -159,13 +155,13 @@ def get_system_instructions():
     if narrator is None:
         emit('error', {"message": "No story selected"})
         return
-    filepath = f"./systems/{narrator.system_name}/instructions.md"
+    filepath = f"./instructions/{narrator.system_name}.md"
     if not os.path.exists(filepath):
         emit('error', {"message": "System instructions not found"})
         return
     with open(filepath, 'r') as f:
         content = f.read()
-    emit('story_file_content', {"filename": f"{narrator.system_name}/instructions.md", "content": content})
+    emit('story_file_content', {"filename": f"{narrator.system_name}.md", "content": content})
 
 @socket.on('get_story_file')
 def get_story_file(data: dict[str, str]):
