@@ -274,7 +274,21 @@ export function initChat() {
         if (typingIndicator) typingIndicator.remove();
         console.log('Tool requested:', data);
         setIsToolCallInProgress(true);
+
+        // If text was streaming, finalize the current text chunk so the
+        // resumed stream gets a fresh wrapper instead of overwriting this one.
+        if (currentNarratorMessageElement) {
+            if (accumulatedContent) {
+                const hist = [...conversationHistory];
+                hist.push({ role: 'assistant', content: accumulatedContent, timestamp: new Date().toISOString() });
+                setConversationHistory(hist);
+            }
+            setCurrentNarratorMessageElement(null);
+            setCurrentTurnThinking('');
+            setCurrentTurnToolCalls([]);
+        }
         setAccumulatedContent('');
+
         ensureAssistantTurnWrapper();
         updateSideButtonsAnimated();
     });

@@ -23,12 +23,19 @@ export function addRetryButton(messageElement) {
 }
 
 function getTurnIndex(wrapper) {
+    // Count user messages preceding this wrapper in the current section. The backend
+    // uses this as a user-message index (not a wrapper index), so multi-chunk turns
+    // (which produce multiple wrappers for one user message) all map to the same index.
     const currentSep = chatHistory.querySelector('.history-separator.current');
-    const allWrappers = [...chatHistory.querySelectorAll('.assistant-turn-wrapper')];
-    const currentWrappers = currentSep
-        ? allWrappers.filter(w => currentSep.compareDocumentPosition(w) & Node.DOCUMENT_POSITION_FOLLOWING)
-        : allWrappers;
-    return currentWrappers.indexOf(wrapper);
+    let userMsgs = [...chatHistory.querySelectorAll('.user-message')];
+    if (currentSep) {
+        userMsgs = userMsgs.filter(u => currentSep.compareDocumentPosition(u) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+    let count = 0;
+    for (const u of userMsgs) {
+        if (wrapper.compareDocumentPosition(u) & Node.DOCUMENT_POSITION_PRECEDING) count++;
+    }
+    return count - 1;
 }
 
 function handleRetryResponse(messageElement) {

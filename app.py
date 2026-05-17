@@ -19,9 +19,9 @@ socket = SocketIO(app, cors_allowed_origins="*")
 global narrator
 narrator = None
 models = [
-    "anthropic/claude-opus-4.6",
+    "anthropic/claude-opus-4.7",
     "anthropic/claude-haiku-4.5",
-    "openai/gpt-5.4",
+    "openai/gpt-5.5",
     "openai/gpt-4o-mini",
     "google/gemini-3.1-pro-preview",
     "moonshotai/kimi-k2.5",

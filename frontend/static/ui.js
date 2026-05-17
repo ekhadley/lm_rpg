@@ -40,38 +40,32 @@ export function positionPopup(button, popup) {
     const popupWidth = popup.offsetWidth || POPUP_FALLBACK.width;
     const popupHeight = popup.offsetHeight || POPUP_FALLBACK.height;
 
-    const centerX = rect.left + rect.width / 2;
-    let left = centerX - popupWidth / 2;
-
-    let top;
-    if (rect.top - popupHeight - EDGE_MARGIN >= EDGE_MARGIN) {
-        top = rect.top - popupHeight - EDGE_MARGIN;
+    let left;
+    if (rect.right + EDGE_MARGIN + popupWidth <= window.innerWidth - EDGE_MARGIN) {
+        left = rect.right + EDGE_MARGIN;
     } else {
-        top = rect.bottom + EDGE_MARGIN;
+        left = rect.left - EDGE_MARGIN - popupWidth;
     }
 
-    if (left < EDGE_MARGIN) left = EDGE_MARGIN;
-    if (left + popupWidth > window.innerWidth - EDGE_MARGIN) left = window.innerWidth - popupWidth - EDGE_MARGIN;
+    const centerY = rect.top + rect.height / 2;
+    let top = centerY - popupHeight / 2;
+    if (top < EDGE_MARGIN) top = EDGE_MARGIN;
+    if (top + popupHeight > window.innerHeight - EDGE_MARGIN) top = window.innerHeight - popupHeight - EDGE_MARGIN;
 
     popup.style.top = top + 'px';
     popup.style.left = left + 'px';
 }
 
 export function setupPopupBehavior(container, button, popup) {
-    let hoverTimeout = null;
-
     const showPopup = () => {
-        clearTimeout(hoverTimeout);
         positionPopup(button, popup);
         popup.classList.add('visible');
     };
 
     const hidePopup = () => {
-        hoverTimeout = setTimeout(() => {
-            if (!popup.classList.contains('pinned')) {
-                popup.classList.remove('visible');
-            }
-        }, 100);
+        if (!popup.classList.contains('pinned')) {
+            popup.classList.remove('visible');
+        }
     };
 
     container.addEventListener('mouseenter', showPopup);
