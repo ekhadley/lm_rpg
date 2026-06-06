@@ -1,6 +1,6 @@
 import {
     chatHistory, userInput,
-    archiveButton, archivePopup, archivePopupCancel, archivePopupConfirm,
+    summarizeButton, summarizePopup, summarizePopupCancel, summarizePopupConfirm,
     costButton, costPopup, costTotalTokens, costAvgTokens, costTotalCost, costAvgCost, costLastTurn,
     themeToggleBtn,
 } from './state.js';
@@ -8,13 +8,28 @@ import {
 // Layout constants for popup positioning
 const EDGE_MARGIN = 8;
 const POPUP_FALLBACK = { width: 525, height: 400 };
-const ARCHIVE_FALLBACK = { width: 320, height: 150 };
+const SUMMARIZE_FALLBACK = { width: 320, height: 150 };
 
-// Scroll
+// Scroll — track whether the view is "stuck" to the bottom so streaming text
+// follows along only when the user hasn't scrolled up to read.
+let stickToBottom = true;
+
 export function scrollToBottom() {
-    if (chatHistory) {
-        chatHistory.scrollTop = chatHistory.scrollHeight;
-    }
+    if (!chatHistory) return;
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+    stickToBottom = true;
+}
+
+// Scroll to bottom only if the user is currently pinned there (didn't scroll up).
+export function scrollToBottomIfStuck() {
+    if (stickToBottom) scrollToBottom();
+}
+
+if (chatHistory) {
+    chatHistory.addEventListener('scroll', () => {
+        const dist = chatHistory.scrollHeight - chatHistory.scrollTop - chatHistory.clientHeight;
+        stickToBottom = dist < 80;
+    });
 }
 
 // Typing indicator
@@ -128,32 +143,32 @@ export function setupCostPopupBehavior() {
     costPopup.addEventListener('mouseleave', hideCostPopup);
 }
 
-// Archive popup
-export function positionArchivePopup(button) {
-    if (!archivePopup || !button) return;
+// Summarize popup
+export function positionSummarizePopup(button) {
+    if (!summarizePopup || !button) return;
     const rect = button.getBoundingClientRect();
-    const popupWidth = archivePopup.offsetWidth || ARCHIVE_FALLBACK.width;
-    const popupHeight = archivePopup.offsetHeight || ARCHIVE_FALLBACK.height;
+    const popupWidth = summarizePopup.offsetWidth || SUMMARIZE_FALLBACK.width;
+    const popupHeight = summarizePopup.offsetHeight || SUMMARIZE_FALLBACK.height;
 
     let top = rect.bottom + EDGE_MARGIN;
     let left = rect.right - popupWidth;
     if (left < EDGE_MARGIN) left = rect.left;
     if (top + popupHeight > window.innerHeight - EDGE_MARGIN) top = rect.top - popupHeight - EDGE_MARGIN;
 
-    archivePopup.style.top = top + 'px';
-    archivePopup.style.left = left + 'px';
+    summarizePopup.style.top = top + 'px';
+    summarizePopup.style.left = left + 'px';
 }
 
-export function showArchivePopup() {
-    if (archivePopup && archiveButton) {
-        positionArchivePopup(archiveButton);
-        archivePopup.classList.add('visible');
-        if (archivePopupCancel) setTimeout(() => archivePopupCancel.focus(), 100);
+export function showSummarizePopup() {
+    if (summarizePopup && summarizeButton) {
+        positionSummarizePopup(summarizeButton);
+        summarizePopup.classList.add('visible');
+        if (summarizePopupCancel) setTimeout(() => summarizePopupCancel.focus(), 100);
     }
 }
 
-export function hideArchivePopup() {
-    if (archivePopup) archivePopup.classList.remove('visible');
+export function hideSummarizePopup() {
+    if (summarizePopup) summarizePopup.classList.remove('visible');
 }
 
 // Confirm popup

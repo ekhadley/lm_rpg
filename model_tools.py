@@ -187,7 +187,11 @@ def hp_toolbox(story_name: str, system_name: str) -> Toolbox:
 def dnd5e_toolbox(story_name: str, system_name: str) -> Toolbox:
     return _make_toolbox(story_name, system_name)
 
+def twd_toolbox(story_name: str, system_name: str) -> Toolbox:
+    return _make_toolbox(story_name, system_name)
+
 SYSTEM_TOOLBOXES: dict[str, Callable] = {
     "hp": hp_toolbox,
     "dnd5e": dnd5e_toolbox,
+    "twd": twd_toolbox,
 }

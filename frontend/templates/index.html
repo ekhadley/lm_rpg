@@ -32,7 +32,7 @@
             <ul class="story-list" id="story-list">
                 {% for story in stories %}
                 <li class="story-item {% if session.get('story') == story.name %}active{% endif %}" data-story="{{ story.name }}">
-                    {% if story.system == 'hp' %}<span class="hp-logo-icon" title="{{ story.system }}"></span>{% else %}<i class="{% if story.system == 'dnd5e' %}fab fa-d-and-d{% else %}fas fa-scroll{% endif %}" title="{{ story.system }}"></i>{% endif %}
+                    {% if story.system == 'hp' %}<span class="hp-logo-icon" title="{{ story.system }}"></span>{% elif story.system == 'twd' %}<span class="twd-logo-icon" title="{{ story.system }}"></span>{% else %}<i class="{% if story.system == 'dnd5e' %}fab fa-d-and-d{% else %}fas fa-scroll{% endif %}" title="{{ story.system }}"></i>{% endif %}
                     <div class="story-item-content">
                         <div class="story-name-row">
                             <span class="story-name">{{ story.name }}</span>
@@ -43,6 +43,10 @@
                         <i class="fas fa-ellipsis-v"></i>
                     </button>
                     <div class="story-context-menu" data-story="{{ story.name }}">
+                        <div class="context-menu-item" data-action="rename-story">
+                            <i class="fas fa-pen"></i>
+                            <span>Rename Story</span>
+                        </div>
                         <div class="context-menu-item" data-action="copy-story">
                             <i class="fas fa-copy"></i>
                             <span>Copy Story</span>
@@ -131,7 +135,7 @@
             </div>
 
             <!-- Floating corner buttons -->
-            <button id="archive-button" class="floating-button left" title="Archive current conversation">
+            <button id="summarize-button" class="floating-button left" title="Summarize current conversation">
                 <i class="fas fa-archive"></i>
             </button>
             <div class="floating-cost-container">
@@ -251,18 +255,18 @@
         </div>
     </div>
 
-    <!-- Archive Confirmation Popup -->
-    <div id="archive-popup" class="archive-popup">
-        <div class="archive-popup-header">
+    <!-- Summarize Confirmation Popup -->
+    <div id="summarize-popup" class="summarize-popup">
+        <div class="summarize-popup-header">
             <i class="fas fa-exclamation-triangle"></i>
-            <span>Archive Conversation</span>
+            <span>Summarize Conversation</span>
         </div>
-        <div class="archive-popup-body">
-            <p>Archive current conversation? This will start a fresh conversation.</p>
+        <div class="summarize-popup-body">
+            <p>Summarize current conversation? This will archive it and start fresh.</p>
         </div>
-        <div class="archive-popup-footer">
-            <button class="archive-popup-btn archive-popup-btn-cancel" id="archive-popup-cancel">Cancel</button>
-            <button class="archive-popup-btn archive-popup-btn-confirm" id="archive-popup-confirm">Archive</button>
+        <div class="summarize-popup-footer">
+            <button class="summarize-popup-btn summarize-popup-btn-cancel" id="summarize-popup-cancel">Cancel</button>
+            <button class="summarize-popup-btn summarize-popup-btn-confirm" id="summarize-popup-confirm">Summarize</button>
         </div>
     </div>
 

@@ -3,32 +3,48 @@ import {
     conversationHistory, setConversationHistory,
     currentNarratorMessageElement, setCurrentNarratorMessageElement,
     setCurrentThinkingElement,
-    lastNarratorMessageElement, setLastNarratorMessageElement,
+    setLastNarratorMessageElement,
     accumulatedContent, setAccumulatedContent,
-    currentTurnToolCalls, setCurrentTurnToolCalls,
-    currentTurnThinking, setCurrentTurnThinking,
     setIsToolCallInProgress, setIsThinkingInProgress,
 } from './state.js';
-import { scrollToBottom, hideTypingIndicator, updateCostDisplay } from './ui.js';
+import { scrollToBottom, scrollToBottomIfStuck, hideTypingIndicator, updateCostDisplay } from './ui.js';
 import {
-    createThinkingButton, createToolButton,
-    ensureAssistantTurnWrapper, updateSideButtonsAnimated,
-    updateThinkingPopupContent, buildFinalSideButtons,
-    appendDiceToThinking,
-} from './sideButtons.js';
+    ensureLiveWrapper, ensureRow, appendReasoning, appendTool, appendDice, closeRows,
+} from './reasoningRow.js';
 import { addRetryButton, addEditButton } from './messageActions.js';
+import { addStoryFileToSidebar } from './story.js';
+
+// Render an out-of-narration <md> block as its own boxed markdown
+function mdBox(inner) {
+    try { return '<div class="md-block">' + marked.parse(inner.trim()) + '</div>'; }
+    catch (e) { return '<div class="md-block">' + inner + '</div>'; }
+}
 
 // Parse narration tags and markdown
 function processNarration(content) {
     let s = content.trim();
     if (s.includes('<narration>')) {
-        return s.replace(/<narration>([\s\S]*?)<\/narration>/g, (_, n) => {
-            try { return '<div class="book-narration">' + marked.parse(n) + '</div>'; }
-            catch (e) { return '<div class="book-narration">' + n + '</div>'; }
-        }).trim();
+        return s
+            .replace(/<md>([\s\S]*?)<\/md>/g, (_, inner) => mdBox(inner))
+            .replace(/<narration>([\s\S]*?)<\/narration>/g, (_, n) => {
+                try { return '<div class="book-narration">' + marked.parse(n) + '</div>'; }
+                catch (e) { return '<div class="book-narration">' + n + '</div>'; }
+            }).trim();
     }
-    try { return marked.parse(s).trim(); }
-    catch (e) { return s; }
+    // Narration by default: pull out <md> blocks, markdown-render the rest as-is
+    let html = '', last = 0, m;
+    const re = /<md>([\s\S]*?)<\/md>/g;
+    try {
+        while ((m = re.exec(s)) !== null) {
+            const before = s.slice(last, m.index).trim();
+            if (before) html += marked.parse(before);
+            html += mdBox(m[1]);
+            last = re.lastIndex;
+        }
+        const after = s.slice(last).trim();
+        if (after) html += marked.parse(after);
+        return html.trim();
+    } catch (e) { return s; }
 }
 
 // Add user message to chat
@@ -47,81 +63,144 @@ function addUserMessage(message, disableInput = true) {
     return messageContainer;
 }
 
-// Add thinking from history (collect for turn)
-function addThinkingFromHistory(thinkingContent) {
-    if (currentTurnThinking) {
-        setCurrentTurnThinking(currentTurnThinking + '\n' + thinkingContent);
-    } else {
-        setCurrentTurnThinking(thinkingContent);
-    }
+// Append a narration block to a turn wrapper and return it
+function appendNarration(wrapper, content) {
+    const el = document.createElement('div');
+    el.className = 'message narrator-message';
+    el.innerHTML = processNarration(content);
+    wrapper.appendChild(el);
+    return el;
 }
 
-// Add assistant message from history
-function addAssistantMessageFromHistory(content, addRetry = false) {
-    if (!chatHistory) return;
-    const messageWrapper = document.createElement('div');
-    messageWrapper.className = 'assistant-turn-wrapper';
-    const sideButtons = document.createElement('div');
-    sideButtons.className = 'assistant-side-buttons';
-
-    if (currentTurnThinking) {
-        sideButtons.appendChild(createThinkingButton(currentTurnThinking, false));
+// Close the currently streaming narration so the next reasoning/tool starts a fresh row
+function finalizeLiveNarration() {
+    if (!currentNarratorMessageElement) return;
+    if (accumulatedContent) {
+        const hist = [...conversationHistory];
+        hist.push({ role: 'assistant', content: accumulatedContent, timestamp: new Date().toISOString() });
+        setConversationHistory(hist);
     }
-    if (currentTurnToolCalls.length > 0) {
-        sideButtons.appendChild(createToolButton(currentTurnToolCalls, false));
-    }
-    messageWrapper.appendChild(sideButtons);
-
-    const narratorMessageElement = document.createElement('div');
-    narratorMessageElement.className = 'message narrator-message';
-    narratorMessageElement.innerHTML = processNarration(content);
-    messageWrapper.appendChild(narratorMessageElement);
-    chatHistory.appendChild(messageWrapper);
-
-    if (addRetry) addRetryButton(narratorMessageElement);
-
-    setCurrentTurnToolCalls([]);
-    setCurrentTurnThinking('');
+    setCurrentNarratorMessageElement(null);
+    setAccumulatedContent('');
 }
 
-// Add tool use to current turn (from history)
-function addToolUseToHistory(data) {
-    const calls = [...currentTurnToolCalls];
-    data.tools.forEach(tool => {
-        let inputs = tool.inputs;
-        if (typeof inputs === 'string') {
-            try { inputs = JSON.parse(inputs); } catch (e) { inputs = {}; }
-        }
-        if (tool.name === 'roll_dice') {
-            const expr = (inputs.dice || inputs.expression || '?');
-            appendDiceToThinking([{ expr, result: tool.result }]);
-        } else {
-            calls.push({ name: tool.name, inputs: inputs, result: tool.result });
+// Render an assistant turn's messages into a wrapper as ordered reasoning rows + narration blocks
+function renderAssistantBlocks(wrapper, messages) {
+    const pending = [];
+    messages.forEach(function(message) {
+        if (message.type === 'thinking') {
+            appendReasoning(wrapper, message.content);
+        } else if (message.type === 'tool_use') {
+            pending.push({ name: message.name, input: message.input });
+        } else if (message.type === 'tool_result') {
+            const tu = pending.shift();
+            if (!tu) return;
+            let inputs = tu.input;
+            if (typeof inputs === 'string') { try { inputs = JSON.parse(inputs); } catch (e) { inputs = {}; } }
+            if (tu.name === 'roll_dice') {
+                appendDice(wrapper, [{ expr: inputs.dice || inputs.expression || '?', result: message.content }]);
+            } else {
+                appendTool(wrapper, { name: tu.name, inputs, result: message.content });
+            }
+        } else if (message.type === 'assistant') {
+            closeRows(wrapper);
+            appendNarration(wrapper, message.content);
         }
     });
-    setCurrentTurnToolCalls(calls);
+    closeRows(wrapper);
 }
 
-// Render a list of history messages
+// Anchor retry/branch controls on a wrapper's last narration (creating an empty one if tool-only)
+function finalizeWrapper(wrapper, node) {
+    let narr = [...wrapper.querySelectorAll('.narrator-message')].pop();
+    if (!narr) narr = appendNarration(wrapper, '');
+    if (node) {
+        wrapper.dataset.turnId = node.id;
+        addRetryButton(narr);
+        if (node.count > 1) attachBranchSwitch(narr, node);
+    }
+    return narr;
+}
+
+// Render a flat list of history messages (archived "previous" conversations), grouping each
+// run of assistant-side messages between user messages into one turn wrapper.
 function renderHistoryMessages(messages, addRetry = false) {
-    let pendingToolUses = [];
-    messages.forEach(function(message) {
-        if (message.type === 'user') {
-            if (message.content != "<|begin_conversation|>") {
-                const container = addUserMessage(message.content, false);
+    let i = 0;
+    while (i < messages.length) {
+        const m = messages[i];
+        if (m.type === 'user') {
+            if (m.content != "<|begin_conversation|>") {
+                const container = addUserMessage(m.content, false);
                 if (addRetry && container) addEditButton(container);
             }
-        } else if (message.type === "tool_result") {
-            const toolUse = pendingToolUses.shift();
-            if (toolUse) addToolUseToHistory({ tools: [{ name: toolUse.name, inputs: toolUse.input, result: message.content }] });
-        } else if (message.type === 'assistant') {
-            addAssistantMessageFromHistory(message.content, addRetry);
-        } else if (message.type === "tool_use") {
-            pendingToolUses.push({ name: message.name, input: message.input });
-        } else if (message.type === "thinking") {
-            addThinkingFromHistory(message.content);
+            i++;
+        } else {
+            const group = [];
+            while (i < messages.length && messages[i].type !== 'user') group.push(messages[i++]);
+            const wrapper = document.createElement('div');
+            wrapper.className = 'assistant-turn-wrapper';
+            chatHistory.appendChild(wrapper);
+            renderAssistantBlocks(wrapper, group);
+            finalizeWrapper(wrapper, null);
         }
-    });
+    }
+}
+
+// Switch-arrow control for a branched (sibling-having) node
+function attachBranchSwitch(anchorEl, node) {
+    if (!anchorEl) return;
+    const ctrl = document.createElement('div');
+    ctrl.className = 'branch-switch';
+    const prev = document.createElement('button');
+    prev.className = 'branch-arrow';
+    prev.innerHTML = '<i class="fas fa-chevron-left"></i>';
+    prev.addEventListener('click', () => doSwitch(node.id, -1));
+    const label = document.createElement('span');
+    label.className = 'branch-label';
+    label.textContent = (node.idx + 1) + '/' + node.count;
+    const next = document.createElement('button');
+    next.className = 'branch-arrow';
+    next.innerHTML = '<i class="fas fa-chevron-right"></i>';
+    next.addEventListener('click', () => doSwitch(node.id, 1));
+    ctrl.appendChild(prev);
+    ctrl.appendChild(label);
+    ctrl.appendChild(next);
+    anchorEl.appendChild(ctrl);
+}
+
+function doSwitch(id, dir) {
+    if (userInput && userInput.disabled) return;
+    socket.emit('switch_branch', { turn_id: id, dir: dir });
+}
+
+// Render one tree node (a user message or a narrator response) with its arrows
+function renderNode(node) {
+    if (node.role === 'user') {
+        const um = node.messages.find(m => m.type === 'user');
+        if (!um) return;  // hidden synthetic turn
+        const container = addUserMessage(um.content, false);
+        if (!container) return;
+        container.dataset.turnId = node.id;
+        addEditButton(container);
+        if (node.count > 1) attachBranchSwitch(container.querySelector('.user-message'), node);
+    } else {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'assistant-turn-wrapper';
+        chatHistory.appendChild(wrapper);
+        renderAssistantBlocks(wrapper, node.messages);
+        finalizeWrapper(wrapper, node);
+    }
+}
+
+// Replace the current (live) section with a fresh render of the active branch
+function renderNodes(nodes) {
+    const currentSep = chatHistory.querySelector('.history-separator.current');
+    if (currentSep) {
+        while (currentSep.nextSibling) currentSep.nextSibling.remove();
+    } else {
+        chatHistory.innerHTML = '';
+    }
+    nodes.forEach(renderNode);
 }
 
 // Wire up all socket listeners and form handler
@@ -156,23 +235,25 @@ export function initChat() {
         chatHistory.appendChild(currentSeparator);
     });
 
-    socket.on('conversation_history', function(history) {
-        setConversationHistory([]);
-        renderHistoryMessages(history, true);
+    socket.on('conversation_history', function(nodes) {
+        renderNodes(nodes);
         const hist = [];
-        history.forEach(function(message) {
-            hist.push({ role: message.type, content: message.content, timestamp: message.timestamp || new Date().toISOString() });
+        nodes.forEach(function(node) {
+            node.messages.forEach(function(m) {
+                if (m.type === 'user') hist.push({ role: 'user', content: m.content });
+                else if (m.type === 'assistant') hist.push({ role: 'assistant', content: m.content });
+            });
         });
         setConversationHistory(hist);
-        scrollToBottom();
+        scrollToBottomIfStuck();
     });
 
     socket.on('assistant_ready', function() {
         hideTypingIndicator();
     });
 
-    socket.on('history_archived', function(data) {
-        console.log('History archived:', data);
+    socket.on('history_summarized', function(data) {
+        console.log('History summarized:', data);
         if (data.success) {
             if (chatHistory) {
                 const existingSeparator = chatHistory.querySelector('.history-separator');
@@ -188,8 +269,6 @@ export function initChat() {
                 scrollToBottom();
             }
             setConversationHistory([]);
-            setCurrentTurnToolCalls([]);
-            setCurrentTurnThinking('');
             setCurrentNarratorMessageElement(null);
             setLastNarratorMessageElement(null);
             setAccumulatedContent('');
@@ -198,61 +277,30 @@ export function initChat() {
     });
 
     socket.on('think_start', function() {
-        console.log('Model started thinking');
         setIsThinkingInProgress(true);
-        // Don't reset thinking — accumulate across tool-call rounds so dice rolls appear in context
-        ensureAssistantTurnWrapper();
-        updateSideButtonsAnimated();
+        const w = ensureLiveWrapper();
+        finalizeLiveNarration();  // output-then-reasoning: close any streamed narration first
+        ensureRow(w);             // open a live row so the "..." shows immediately
     });
 
     socket.on('think_end', function() {
         setIsThinkingInProgress(false);
-        updateSideButtonsAnimated();
     });
 
     socket.on('think_output', function(data) {
-        setCurrentTurnThinking(currentTurnThinking + data.text);
-        updateThinkingPopupContent();
-        scrollToBottom();
+        appendReasoning(ensureLiveWrapper(), data.text);
+        scrollToBottomIfStuck();
     });
 
     socket.on('text_start', function() {
-        console.log('Narrator switched to outputting text');
         setIsThinkingInProgress(false);
-
+        const w = ensureLiveWrapper();
+        closeRows(w);
         if (!currentNarratorMessageElement) {
-            let messageWrapper = chatHistory.querySelector('.assistant-turn-wrapper.in-progress');
-            if (messageWrapper) {
-                messageWrapper.classList.remove('in-progress');
-                let narratorEl = messageWrapper.querySelector('.narrator-message');
-                if (narratorEl && narratorEl.classList.contains('narrator-placeholder')) {
-                    narratorEl.classList.remove('narrator-placeholder');
-                }
-                setCurrentNarratorMessageElement(narratorEl);
-            } else {
-                messageWrapper = document.createElement('div');
-                messageWrapper.className = 'assistant-turn-wrapper';
-                const sideButtons = document.createElement('div');
-                sideButtons.className = 'assistant-side-buttons';
-                messageWrapper.appendChild(sideButtons);
-                const el = document.createElement('div');
-                el.className = 'message narrator-message';
-                setCurrentNarratorMessageElement(el);
-                messageWrapper.appendChild(el);
-                chatHistory.appendChild(messageWrapper);
-            }
-
-            currentNarratorMessageElement.style.display = 'none';
-            const sideButtons = messageWrapper.querySelector('.assistant-side-buttons');
-            if (sideButtons) buildFinalSideButtons(sideButtons);
-        } else {
-            const wrapper = currentNarratorMessageElement.closest('.assistant-turn-wrapper');
-            if (wrapper) {
-                const sideButtons = wrapper.querySelector('.assistant-side-buttons');
-                if (sideButtons) buildFinalSideButtons(sideButtons);
-            }
+            const el = appendNarration(w, '');
+            el.style.display = 'none';
+            setCurrentNarratorMessageElement(el);
         }
-
     });
 
     socket.on('text_output', function(data) {
@@ -265,44 +313,31 @@ export function initChat() {
             if (content.includes('<narration>') && !content.includes('</narration>')) {
                 content += '</narration>';
             }
+            if (content.lastIndexOf('<md>') > content.lastIndexOf('</md>')) {
+                content += '</md>';
+            }
             currentNarratorMessageElement.innerHTML = processNarration(content);
+            scrollToBottomIfStuck();
         }
     });
 
     socket.on('tool_request', function(data) {
         const typingIndicator = document.querySelector('.typing-indicator');
         if (typingIndicator) typingIndicator.remove();
-        console.log('Tool requested:', data);
         setIsToolCallInProgress(true);
-
-        // If text was streaming, finalize the current text chunk so the
-        // resumed stream gets a fresh wrapper instead of overwriting this one.
-        if (currentNarratorMessageElement) {
-            if (accumulatedContent) {
-                const hist = [...conversationHistory];
-                hist.push({ role: 'assistant', content: accumulatedContent, timestamp: new Date().toISOString() });
-                setConversationHistory(hist);
-            }
-            setCurrentNarratorMessageElement(null);
-            setCurrentTurnThinking('');
-            setCurrentTurnToolCalls([]);
-        }
-        setAccumulatedContent('');
-
-        ensureAssistantTurnWrapper();
-        updateSideButtonsAnimated();
+        const w = ensureLiveWrapper();
+        finalizeLiveNarration();  // output-then-tool: close any streamed narration, start a new row
+        ensureRow(w);
     });
 
     socket.on('tool_submit', function(data) {
         setAccumulatedContent('');
         const typingIndicator = document.querySelector('.typing-indicator');
         if (typingIndicator) typingIndicator.remove();
-        console.log('Tool submitted:', data);
         setIsToolCallInProgress(false);
 
-        const calls = [...currentTurnToolCalls];
+        const w = ensureLiveWrapper();
         const hist = [...conversationHistory];
-        const diceRolls = [];
         data.tools.forEach(tool => {
             let inputs = tool.inputs;
             if (typeof inputs === 'string') {
@@ -310,20 +345,16 @@ export function initChat() {
             }
             hist.push({ role: 'tool', name: tool.name, inputs: tool.inputs, result: tool.result, timestamp: new Date().toISOString() });
             if (tool.name === 'roll_dice') {
-                diceRolls.push({ expr: inputs.dice || inputs.expression || '?', result: tool.result });
+                appendDice(w, [{ expr: inputs.dice || inputs.expression || '?', result: tool.result }]);
             } else {
-                calls.push({ name: tool.name, inputs: inputs, result: tool.result });
+                if ((tool.name === 'write_file' || tool.name === 'append_file') && inputs.file_name) {
+                    addStoryFileToSidebar(inputs.file_name.endsWith('.md') ? inputs.file_name : inputs.file_name + '.md');
+                }
+                appendTool(w, { name: tool.name, inputs, result: tool.result });
             }
         });
-        if (diceRolls.length > 0) {
-            appendDiceToThinking(diceRolls);
-            updateThinkingPopupContent();
-        }
-        setCurrentTurnToolCalls(calls);
         setConversationHistory(hist);
-
-        ensureAssistantTurnWrapper();
-        updateSideButtonsAnimated();
+        scrollToBottomIfStuck();
     });
 
     socket.on('turn_end', function(data) {
@@ -333,22 +364,14 @@ export function initChat() {
             const hist = [...conversationHistory];
             hist.push({ role: 'assistant', content: accumulatedContent, timestamp: new Date().toISOString() });
             setConversationHistory(hist);
-
-            const wrapper = currentNarratorMessageElement.closest('.assistant-turn-wrapper');
-            if (wrapper) {
-                const sideButtons = wrapper.querySelector('.assistant-side-buttons');
-                if (sideButtons) buildFinalSideButtons(sideButtons);
-            }
-
             setLastNarratorMessageElement(currentNarratorMessageElement);
-            addRetryButton(lastNarratorMessageElement);
         }
+        const w = chatHistory.querySelector('.assistant-turn-wrapper.in-progress');
+        if (w) { closeRows(w); w.classList.remove('in-progress'); }
 
         setCurrentNarratorMessageElement(null);
         setCurrentThinkingElement(null);
         setAccumulatedContent('');
-        setCurrentTurnToolCalls([]);
-        setCurrentTurnThinking('');
         setIsToolCallInProgress(false);
         setIsThinkingInProgress(false);
 

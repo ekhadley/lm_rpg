@@ -260,41 +260,44 @@ class OpenRouterProvider():
                 "system_name": kwargs.get("system_name", ""),
                 "messages": self.messages,
             }, f, indent=4)
-    def loadMessages(self, path: str) -> list[dict] | None:
-        if os.path.exists(path):
-            with open(path) as f:
-                data = json.load(f)
-                if "messages" in data:
-                    messages = data["messages"]
-                    self.messages = messages
+    def recompute_usage_from_messages(self, messages: list[dict]) -> None:
+        """Rebuild usage_history (and the system-turn count) from a flat message list."""
+        self.usage_history = []
+        self.system_turn_entries = 0
+        seen_real_user = False
+        for msg in messages:
+            if msg.get("role") == "user" and not str(msg.get("content", "")).startswith("System:"):
+                seen_real_user = True
+            if msg.get("role") == "assistant" and "usage" in msg:
+                if not seen_real_user:
+                    self.system_turn_entries += 1
+                self.usage_history.append(msg["usage"])
 
-                    # Update saved system prompt to live version
-                    if self.messages and self.messages[0].get("role") == "system":
-                        self.messages[0]["content"] = [{
-                            "type": "text",
-                            "text": self.system_prompt,
-                            "cache_control": {"type": "ephemeral"}
-                        }]
+    def _with_cache_anchor(self, messages: list[dict]) -> list[dict]:
+        """Return a copy of messages with a moving cache breakpoint on the last message.
 
-                    # Reconstruct usage_history from per-message usage data
-                    self.usage_history = []
-                    self.system_turn_entries = 0
-                    seen_real_user = False
-                    for msg in messages:
-                        if msg.get("role") == "user" and not str(msg.get("content", "")).startswith("System:"):
-                            seen_real_user = True
-                        if msg.get("role") == "assistant" and "usage" in msg:
-                            if not seen_real_user:
-                                self.system_turn_entries += 1
-                            self.usage_history.append(msg["usage"])
-                    
-                    return messages
-        return None
+        The system prompt carries a static cache_control breakpoint; this adds a second,
+        sliding one on the final message so the whole conversation prefix (not just the
+        system prompt) is read from cache on the next turn. Up to 4 breakpoints are allowed.
+        """
+        if not messages:
+            return messages
+        msgs = list(messages)
+        last = copy.deepcopy(msgs[-1])
+        content = last.get("content")
+        if isinstance(content, str) and content:
+            last["content"] = [{"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}]
+        elif isinstance(content, list) and content:
+            last["content"][-1] = {**last["content"][-1], "cache_control": {"type": "ephemeral"}}
+        else:
+            return messages  # nothing to anchor on; rely on the system-prompt cache only
+        msgs[-1] = last
+        return msgs
 
     def getStream(self) -> OpenRouterStream:
         return OpenRouterStream(
             model_name = self.model_name,
-            messages = self.messages,
+            messages = self._with_cache_anchor(self.messages),
             tools = self.tool_schemas,
             thinking_enabled = self.thinking_enabled,
             thinking_effort = self.thinking_effort,

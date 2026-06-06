@@ -2,6 +2,7 @@ import os
 import json
 import shutil
 import logging
+from history import TurnTree
 
 purple = '\x1b[38;2;255;0;255m'
 blue = '\x1b[38;2;0;0;255m'
@@ -95,6 +96,21 @@ def archiveStoryDir(story_name: str) -> bool:
         return False
     os.makedirs(f"./{STORIES_ARCHIVE_DIR}", exist_ok=True)
     shutil.move(story_dir, f"./{STORIES_ARCHIVE_DIR}/{story_name}")
+    return True
+
+def renameStoryDir(old_name: str, new_name: str) -> bool:
+    old_dir = f"./{STORIES_ROOT_DIR}/{old_name}"
+    new_dir = f"./{STORIES_ROOT_DIR}/{new_name}"
+    if not os.path.exists(old_dir) or os.path.exists(new_dir):
+        return False
+    shutil.move(old_dir, new_dir)
+    info_path = os.path.join(new_dir, "info.json")
+    if os.path.exists(info_path):
+        with open(info_path, "r") as f:
+            info = json.load(f)
+        info["story_name"] = new_name
+        with open(info_path, "w") as f:
+            json.dump(info, f, indent=4)
     return True
 
 def loadStoryInfo(story_name: str, model_name: str = None, system_name: str = None) -> dict[str, str]:
@@ -214,8 +230,10 @@ def loadAllPreviousHistory(story_name: str) -> list[dict]:
         try:
             with open(filepath, 'r') as f:
                 data = json.load(f)
-                messages = data.get('messages', [])
-                all_messages.extend(messages)
+                if "nodes" in data:  # new branching format — flatten the active path
+                    all_messages.extend(TurnTree.deserialize(data).active_messages())
+                else:
+                    all_messages.extend(data.get('messages', []))
         except (json.JSONDecodeError, IOError):
             continue
     

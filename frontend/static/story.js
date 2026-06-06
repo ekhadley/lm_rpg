@@ -13,13 +13,28 @@ import {
     fileList, rightSidebar,
     fileViewerOverlay, fileViewerTitle, fileViewerBody, fileViewerToc, fileViewerClose,
 } from './state.js';
-import { showTypingIndicator } from './ui.js';
+import { showTypingIndicator, showConfirmPopup } from './ui.js';
+
+export function addStoryFileToSidebar(filename) {
+    if (!fileList || !filename) return;
+    if (fileList.querySelector('.file-item[data-filename="' + filename + '"]')) return;
+    const li = document.createElement('li');
+    li.className = 'file-item';
+    li.dataset.filename = filename;
+    li.innerHTML = '<i class="fas fa-file-lines"></i>';
+    const span = document.createElement('span');
+    span.textContent = filename;
+    li.appendChild(span);
+    fileList.appendChild(li);
+}
 
 function setHeaderIcon(system) {
     const icon = document.getElementById('current-story-icon');
     if (!icon) return;
     if (system === 'hp') {
         icon.className = 'story-header-icon hp-logo-icon';
+    } else if (system === 'twd') {
+        icon.className = 'story-header-icon twd-logo-icon';
     } else if (system === 'dnd5e') {
         icon.className = 'fab fa-d-and-d story-header-icon';
     } else {
@@ -36,7 +51,7 @@ export function selectStoryDirectly(storyTitle) {
         document.getElementById('current-story-title').textContent = storyTitle;
     }
     const storyItem = storyList ? storyList.querySelector('.story-item[data-story="' + storyTitle + '"]') : null;
-    const sidebarIcon = storyItem ? storyItem.querySelector('.hp-logo-icon, i[title]') : null;
+    const sidebarIcon = storyItem ? storyItem.querySelector('[title]') : null;
     const system = sidebarIcon ? sidebarIcon.getAttribute('title') : null;
     if (system) setHeaderIcon(system);
     const modelText = storyItem ? storyItem.querySelector('.story-meta').textContent.trim() : '';
@@ -63,10 +78,14 @@ export function addNewStory(story) {
     if (system === 'hp') {
         icon = document.createElement('span');
         icon.className = 'hp-logo-icon';
+    } else if (system === 'twd') {
+        icon = document.createElement('span');
+        icon.className = 'twd-logo-icon';
     } else {
         icon = document.createElement('i');
         icon.className = system === 'dnd5e' ? 'fab fa-d-and-d' : 'fas fa-scroll';
     }
+    icon.title = system;
 
     const contentDiv = document.createElement('div');
     contentDiv.className = 'story-item-content';
@@ -92,7 +111,7 @@ export function addNewStory(story) {
     const contextMenu = document.createElement('div');
     contextMenu.className = 'story-context-menu';
     contextMenu.dataset.story = storyName;
-    contextMenu.innerHTML = '<div class="context-menu-item" data-action="copy-story"><i class="fas fa-copy"></i><span>Copy Story</span></div><div class="context-menu-item delete" data-action="delete-story"><i class="fas fa-trash"></i><span>Delete Story</span></div>';
+    contextMenu.innerHTML = '<div class="context-menu-item" data-action="rename-story"><i class="fas fa-pen"></i><span>Rename Story</span></div><div class="context-menu-item" data-action="copy-story"><i class="fas fa-copy"></i><span>Copy Story</span></div><div class="context-menu-item delete" data-action="delete-story"><i class="fas fa-trash"></i><span>Delete Story</span></div>';
 
     li.appendChild(icon);
     li.appendChild(contentDiv);
@@ -105,6 +124,36 @@ function closeCopyStoryModal() {
     if (copyStoryModal) copyStoryModal.classList.remove('show');
 }
 
+// Turn a story-name span into an editable field for renaming
+function startRename(nameSpan) {
+    const original = nameSpan.textContent;
+    nameSpan.contentEditable = 'true';
+    nameSpan.classList.add('editing');
+    nameSpan.focus();
+    document.getSelection().selectAllChildren(nameSpan);
+
+    let done = false;
+    const finish = (commit) => {
+        if (done) return;
+        done = true;
+        nameSpan.contentEditable = 'false';
+        nameSpan.classList.remove('editing');
+        const newName = nameSpan.textContent.trim();
+        if (commit && newName && newName !== original) {
+            socket.emit('rename_story', { old_name: original, new_name: newName });
+            nameSpan.textContent = newName; // optimistic; server confirms via story_renamed
+        } else {
+            nameSpan.textContent = original;
+        }
+    };
+
+    nameSpan.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+        else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    nameSpan.addEventListener('blur', () => finish(true));
+}
+
 export function initStory() {
     // New Story button opens create modal
     if (newStoryBtn) {
@@ -114,6 +163,7 @@ export function initStory() {
     // Story list click handler
     if (storyList) {
         storyList.addEventListener('click', function(e) {
+            if (e.target.closest('.story-name.editing')) return;
             const menuBtn = e.target.closest('.story-menu-btn');
             if (menuBtn) {
                 e.stopPropagation();
@@ -130,6 +180,14 @@ export function initStory() {
             }
 
             const menuItem = e.target.closest('.context-menu-item');
+            if (menuItem && menuItem.dataset.action === 'rename-story') {
+                e.stopPropagation();
+                const storyItem = menuItem.closest('.story-item');
+                menuItem.closest('.story-context-menu').classList.remove('show');
+                const nameSpan = storyItem.querySelector('.story-name');
+                if (nameSpan) startRename(nameSpan);
+                return;
+            }
             if (menuItem && menuItem.dataset.action === 'copy-story') {
                 e.stopPropagation();
                 const storyItem = menuItem.closest('.story-item');
@@ -146,9 +204,9 @@ export function initStory() {
                 const storyItem = menuItem.closest('.story-item');
                 const storyName = storyItem.getAttribute('data-story');
                 menuItem.closest('.story-context-menu').classList.remove('show');
-                if (confirm('Delete "' + storyName + '"? It will be moved to the archive.')) {
+                showConfirmPopup('Delete "' + storyName + '"? It will be moved to the archive.', () => {
                     socket.emit('delete_story', { story_name: storyName });
-                }
+                });
                 return;
             }
 
@@ -301,6 +359,27 @@ export function initStory() {
 
     socket.on('story_copied', function(data) { addNewStory(data); });
 
+    socket.on('story_renamed', function(data) {
+        const { old_name, new_name } = data;
+        if (storyList) {
+            const item = storyList.querySelector('.story-item[data-story="' + old_name + '"]');
+            if (item) {
+                item.setAttribute('data-story', new_name);
+                const nameSpan = item.querySelector('.story-name');
+                if (nameSpan) nameSpan.textContent = new_name;
+                const menuBtn = item.querySelector('.story-menu-btn');
+                if (menuBtn) menuBtn.dataset.story = new_name;
+                const ctxMenu = item.querySelector('.story-context-menu');
+                if (ctxMenu) ctxMenu.dataset.story = new_name;
+            }
+        }
+        if (currentStory === old_name) {
+            setCurrentStory(new_name);
+            const titleEl = document.getElementById('current-story-title');
+            if (titleEl) titleEl.textContent = new_name;
+        }
+    });
+
     socket.on('story_locked', function(data) {
         console.log('Story locked with data:', data);
         if (currentStory && storyList) {
@@ -314,16 +393,7 @@ export function initStory() {
         // Populate right sidebar file list
         if (fileList) {
             fileList.innerHTML = '';
-            (data.story_files || []).forEach(filename => {
-                const li = document.createElement('li');
-                li.className = 'file-item';
-                li.dataset.filename = filename;
-                li.innerHTML = '<i class="fas fa-file-lines"></i>';
-                const span = document.createElement('span');
-                span.textContent = filename;
-                li.appendChild(span);
-                fileList.appendChild(li);
-            });
+            (data.story_files || []).forEach(addStoryFileToSidebar);
         }
         // Update system instructions label
         const label = document.getElementById('system-instructions-label');

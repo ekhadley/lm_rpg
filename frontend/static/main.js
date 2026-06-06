@@ -1,4 +1,4 @@
-import { userInput, archivePopup, archiveButton, selectStoryConfigModal, copyStoryModal, exportButton, socket, fileViewerOverlay, debugModal, debugModalClose } from './state.js';
+import { userInput, summarizePopup, summarizeButton, selectStoryConfigModal, copyStoryModal, exportButton, socket, fileViewerOverlay, debugModal, debugModalClose } from './state.js';
 import { setPendingStoryName } from './state.js';
 import { initAllDropdowns } from './dropdowns.js';
 import { initStory, selectStoryDirectly, closeCopyStoryModal } from './story.js';
@@ -6,7 +6,7 @@ import { initChat } from './chat.js';
 import { exportConversation } from './debugViewer.js';
 import {
     setupCostPopupBehavior, initTheme,
-    showArchivePopup, hideArchivePopup, positionArchivePopup,
+    showSummarizePopup, hideSummarizePopup, positionSummarizePopup,
     initConfirmPopup, hideConfirmPopup,
 } from './ui.js';
 
@@ -34,37 +34,37 @@ window.onload = function() {
     if (exportButton) exportButton.addEventListener('click', exportConversation);
     if (debugModalClose) debugModalClose.addEventListener('click', () => debugModal.classList.remove('show'));
 
-    // Archive button
-    if (archiveButton) {
-        archiveButton.addEventListener('click', function(e) {
+    // Summarize button
+    if (summarizeButton) {
+        summarizeButton.addEventListener('click', function(e) {
             e.stopPropagation();
-            if (archivePopup && archivePopup.classList.contains('visible')) hideArchivePopup();
-            else showArchivePopup();
+            if (summarizePopup && summarizePopup.classList.contains('visible')) hideSummarizePopup();
+            else showSummarizePopup();
         });
     }
 
-    const archivePopupCancel = document.getElementById('archive-popup-cancel');
-    const archivePopupConfirm = document.getElementById('archive-popup-confirm');
+    const summarizePopupCancel = document.getElementById('summarize-popup-cancel');
+    const summarizePopupConfirm = document.getElementById('summarize-popup-confirm');
 
-    if (archivePopupCancel) {
-        archivePopupCancel.addEventListener('click', function(e) {
+    if (summarizePopupCancel) {
+        summarizePopupCancel.addEventListener('click', function(e) {
             e.stopPropagation();
-            hideArchivePopup();
+            hideSummarizePopup();
         });
     }
-    if (archivePopupConfirm) {
-        archivePopupConfirm.addEventListener('click', function(e) {
+    if (summarizePopupConfirm) {
+        summarizePopupConfirm.addEventListener('click', function(e) {
             e.stopPropagation();
-            socket.emit('archive_history');
-            hideArchivePopup();
+            socket.emit('summarize_history');
+            hideSummarizePopup();
         });
     }
 
     // Close popups on outside click
     document.addEventListener('click', function(e) {
-        if (archivePopup && archivePopup.classList.contains('visible')) {
-            if (!archivePopup.contains(e.target) && e.target !== archiveButton) {
-                hideArchivePopup();
+        if (summarizePopup && summarizePopup.classList.contains('visible')) {
+            if (!summarizePopup.contains(e.target) && e.target !== summarizeButton) {
+                hideSummarizePopup();
             }
         }
     });
@@ -72,7 +72,7 @@ window.onload = function() {
     // Escape key handler
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
-            if (archivePopup && archivePopup.classList.contains('visible')) hideArchivePopup();
+            if (summarizePopup && summarizePopup.classList.contains('visible')) hideSummarizePopup();
             if (selectStoryConfigModal && selectStoryConfigModal.classList.contains('show')) {
                 selectStoryConfigModal.classList.remove('show');
                 setPendingStoryName(null);
@@ -84,10 +84,10 @@ window.onload = function() {
         }
     });
 
-    // Reposition archive popup on resize
+    // Reposition summarize popup on resize
     window.addEventListener('resize', function() {
-        if (archivePopup && archivePopup.classList.contains('visible') && archiveButton) {
-            positionArchivePopup(archiveButton);
+        if (summarizePopup && summarizePopup.classList.contains('visible') && summarizeButton) {
+            positionSummarizePopup(summarizeButton);
         }
     });
 };

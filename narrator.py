@@ -1,7 +1,10 @@
+import os
+import json
 from utils import getFullStoryInstruction, loadAllPreviousHistory
 from model_tools import Toolbox, SYSTEM_TOOLBOXES
 from callbacks import WebCallbackHandler
 from openrouter import OpenRouterProvider
+from history import TurnTree
 from flask_socketio import SocketIO
     
 class Narrator:
@@ -14,6 +17,7 @@ class Narrator:
         self.system_prompt = getFullStoryInstruction(system_name, story_name)
         self.story_history_path = f"./stories/{story_name}/history.json"
         self.thinking_effort = "xhigh"
+        self.tree = TurnTree.empty()
 
         self.provider = OpenRouterProvider(
             model_name=model_name,
@@ -22,16 +26,55 @@ class Narrator:
             toolbox=self.tb,
             callback_handler=WebCallbackHandler(socket)
         )
-    
-    def saveMessages(self):
-        self.provider.saveMessages(self.story_history_path, model_name=self.model_name, system_name=self.system_name)
 
-    def loadMessages(self) -> list[dict[str, str]] | None:
-        return self.provider.loadMessages(self.story_history_path)
-    
+    def _systemMessage(self) -> dict:
+        return {"role": "system", "content": [{"type": "text", "text": self.system_prompt, "cache_control": {"type": "ephemeral"}}]}
+
+    def _rebuildContext(self):
+        """Set the provider's flat message list to [system] + the active branch."""
+        self.provider.messages = [self._systemMessage()] + self.tree.active_messages()
+        self.provider.recompute_usage_from_messages(self.provider.messages)
+
+    def saveMessages(self):
+        with open(self.story_history_path, "w+") as f:
+            json.dump({"model_name": self.model_name, "system_name": self.system_name, **self.tree.serialize()}, f, indent=4)
+
+    def loadMessages(self) -> TurnTree | None:
+        if not os.path.exists(self.story_history_path):
+            return None
+        with open(self.story_history_path) as f:
+            data = json.load(f)
+        if "nodes" in data:
+            self.tree = TurnTree.deserialize(data)
+        elif "messages" in data:
+            self.tree = TurnTree.migrate_from_flat(data["messages"])
+        else:
+            return None
+        self._rebuildContext()
+        return self.tree
+
+    def refreshSystemPrompt(self):
+        """Re-read story files (including a freshly-written summary) into the system prompt."""
+        self.system_prompt = getFullStoryInstruction(self.system_name, self.story_name)
+
     def clearMessages(self):
-        """Clear all messages from the provider. Used after archiving history."""
-        self.provider.messages = []
+        """Reset to an empty tree. Used after summarization."""
+        self.tree = TurnTree.empty()
+        self._rebuildContext()
+
+    def _emitHistory(self):
+        self.socket.emit('conversation_history', self._transformTreeForFrontend())
+
+    def _runIntoTurn(self, parent_id):
+        """Run the model, then capture the [user, assistant...] messages just produced
+        as a user node + an assistant-node child. Returns the new assistant node id."""
+        n = len(self.provider.messages)
+        # the user message is already the last entry; capture from there after the run
+        user_start = n - 1
+        self.provider.run()
+        new = self.provider.messages[user_start:]
+        u = self.tree.add_node(parent_id, "user", new[:1])
+        return self.tree.add_node(u, "assistant", new[1:])
 
     def loadStory(self):
         # Load previous history for UI display (not sent to model)
@@ -39,18 +82,17 @@ class Narrator:
         if previous_messages:
             frontend_previous = self._transformMessagesForFrontend(previous_messages)
             self.socket.emit('previous_history', frontend_previous)
-        
-        # Load live history (this populates self.provider.messages for model)
+
         history = self.loadMessages()
         if history is not None:
-            self.saveMessages()  # Persist live system prompt update to disk
-            # Transform messages from OpenRouter format (role) to frontend format (type)
-            frontend_messages = self._transformMessagesForFrontend(self.provider.messages)
-            self.socket.emit('conversation_history', frontend_messages)
+            self.saveMessages()  # persist migration / live system prompt
+            self._emitHistory()
         elif not previous_messages:
             self.provider.addUserMessage("System: start of story")
-            self.provider.run(system_turn=True)
+            self._runIntoTurn(None)
+            self._rebuildContext()
             self.saveMessages()
+            self._emitHistory()
         self.socket.emit('assistant_ready')
         self.socket.emit('turn_end', {"cost_stats": self.provider.getCostStats()})
     
@@ -118,12 +160,74 @@ class Narrator:
                 })
         
         return frontend_messages
-     
+
+    def _transformTreeForFrontend(self) -> list[dict]:
+        """Active-path nodes, each with branch info and per-node frontend messages."""
+        nodes = []
+        for nid in self.tree.path():
+            node = self.tree.nodes[nid]
+            idx, count = self.tree.branch_info(nid)
+            nodes.append({
+                "id": nid,
+                "role": node["role"],
+                "idx": idx,
+                "count": count,
+                "messages": self._transformMessagesForFrontend(node["messages"]),
+            })
+        return nodes
+
+    def _leafCost(self) -> float:
+        node = self.tree.nodes.get(self.tree.current_leaf)
+        if not node:
+            return 0.0
+        return sum(m.get("usage", {}).get("cost", 0.0) for m in node["messages"])
+
     def handleUserMessage(self, data: dict[str, str]) -> None:
+        parent = self.tree.current_leaf
         self.provider.addUserMessage(data['message'])
-        self.provider.run()
-        # turn_end is emitted by the provider's callback with cost_stats
+        self._runIntoTurn(parent)
+        self._rebuildContext()
         self.saveMessages()
+        self._emitHistory()
+
+    def regenerate_turn(self, node_id: str) -> None:
+        node = self.tree.nodes.get(node_id)
+        if not node or node["role"] != "assistant":
+            return
+        parent = node["parent"]  # the user node this responds to
+        self.provider.messages = [self._systemMessage()] + self.tree.messages_to(parent)
+        self.provider.recompute_usage_from_messages(self.provider.messages)
+        n = len(self.provider.messages)
+        self.provider.run()
+        self.tree.add_node(parent, "assistant", self.provider.messages[n:])
+        self._rebuildContext()
+        self.saveMessages()
+        self._emitHistory()
+
+    def edit_turn(self, node_id: str, new_content: str) -> None:
+        node = self.tree.nodes.get(node_id)
+        if not node or node["role"] != "user":
+            return
+        grandparent = node["parent"]  # the assistant node before it (or None)
+        self.provider.messages = [self._systemMessage()] + self.tree.messages_to(grandparent)
+        self.provider.addUserMessage(new_content)
+        self.provider.recompute_usage_from_messages(self.provider.messages)
+        self._runIntoTurn(grandparent)
+        self._rebuildContext()
+        self.saveMessages()
+        self._emitHistory()
+
+    def switch_branch(self, node_id: str, direction: int) -> None:
+        sibs = self.tree.siblings(node_id)
+        if node_id not in sibs or len(sibs) < 2:
+            return
+        target = sibs[(sibs.index(node_id) + direction) % len(sibs)]
+        self.tree.set_leaf(target)
+        self._rebuildContext()
+        self.provider.last_turn_cost = self._leafCost()
+        self.saveMessages()
+        self._emitHistory()
+        self.socket.emit('turn_end', {"cost_stats": self.provider.getCostStats()})
 
     def __str__(self) -> str:
         return f"Narrator(model_name={self.model_name}, system={self.system_name}, tools=Toolbox[{len(self.tb.tools)}])"

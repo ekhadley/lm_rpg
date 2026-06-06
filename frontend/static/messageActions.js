@@ -1,9 +1,7 @@
 import {
     socket, chatHistory, userInput,
-    conversationHistory, setConversationHistory,
     setCurrentNarratorMessageElement,
     setAccumulatedContent,
-    setCurrentTurnToolCalls, setCurrentTurnThinking,
 } from './state.js';
 import { showTypingIndicator, showConfirmPopup } from './ui.js';
 
@@ -22,66 +20,27 @@ export function addRetryButton(messageElement) {
     messageElement.appendChild(retryContainer);
 }
 
-function getTurnIndex(wrapper) {
-    // Count user messages preceding this wrapper in the current section. The backend
-    // uses this as a user-message index (not a wrapper index), so multi-chunk turns
-    // (which produce multiple wrappers for one user message) all map to the same index.
-    const currentSep = chatHistory.querySelector('.history-separator.current');
-    let userMsgs = [...chatHistory.querySelectorAll('.user-message')];
-    if (currentSep) {
-        userMsgs = userMsgs.filter(u => currentSep.compareDocumentPosition(u) & Node.DOCUMENT_POSITION_FOLLOWING);
-    }
-    let count = 0;
-    for (const u of userMsgs) {
-        if (wrapper.compareDocumentPosition(u) & Node.DOCUMENT_POSITION_PRECEDING) count++;
-    }
-    return count - 1;
-}
-
 function handleRetryResponse(messageElement) {
     if (userInput && userInput.disabled) return;
 
     const wrapper = messageElement.closest('.assistant-turn-wrapper');
     if (!wrapper) return;
-    const turnIndex = getTurnIndex(wrapper);
-    if (turnIndex < 0) return;
+    const turnId = wrapper.dataset.turnId;
+    if (!turnId) return;
 
-    const hasLaterMessages = wrapper.nextElementSibling !== null;
-    const message = hasLaterMessages
-        ? 'Regenerate this response? All later messages will be deleted.'
-        : 'Regenerate this response?';
-
-    showConfirmPopup(message, () => {
+    showConfirmPopup('Regenerate this response?', () => {
         if (userInput) userInput.disabled = true;
 
-        // Remove all DOM elements after this wrapper
-        while (wrapper.nextElementSibling) {
-            wrapper.nextElementSibling.remove();
-        }
+        // Optimistically clear this response (and later DOM, now off-branch). The
+        // authoritative re-render arrives via conversation_history when the run ends.
+        while (wrapper.nextElementSibling) wrapper.nextElementSibling.remove();
+        wrapper.innerHTML = '';
+        wrapper.classList.add('in-progress');
 
-        // Clear side buttons and message content
-        const sideButtons = wrapper.querySelector('.assistant-side-buttons');
-        if (sideButtons) sideButtons.innerHTML = '';
-        messageElement.innerHTML = '';
-
-        // Truncate conversation history to the user message that triggered this turn
-        let userCount = 0;
-        for (let i = 0; i < conversationHistory.length; i++) {
-            if (conversationHistory[i].role === 'user') {
-                if (userCount === turnIndex) {
-                    setConversationHistory(conversationHistory.slice(0, i + 1));
-                    break;
-                }
-                userCount++;
-            }
-        }
-
-        setCurrentNarratorMessageElement(messageElement);
+        setCurrentNarratorMessageElement(null);
         setAccumulatedContent('');
-        setCurrentTurnToolCalls([]);
-        setCurrentTurnThinking('');
         showTypingIndicator();
-        socket.emit('retry_response', { turn_index: turnIndex });
+        socket.emit('retry_response', { turn_id: turnId });
     });
 }
 
@@ -169,61 +128,21 @@ function startEditing(userMessageContainer) {
 }
 
 function handleEditMessage(userMessageContainer, newText) {
-    // Find the assistant-turn-wrapper that follows this user message
-    let nextEl = userMessageContainer.nextElementSibling;
-    while (nextEl && !nextEl.classList.contains('assistant-turn-wrapper')) {
-        nextEl = nextEl.nextElementSibling;
-    }
-    if (!nextEl) return;
-    const wrapper = nextEl;
-    const turnIndex = getTurnIndex(wrapper);
-    if (turnIndex < 0) return;
+    if (userInput && userInput.disabled) return;
+    const turnId = userMessageContainer.dataset.turnId;
+    if (!turnId) return;
+    if (userInput) userInput.disabled = true;
 
-    const hasLaterMessages = wrapper.nextElementSibling !== null;
-    const doEdit = () => {
-        if (userInput) userInput.disabled = true;
+    // Optimistically drop everything after the edited message (now off-branch) and
+    // stream the new response into a fresh wrapper; conversation_history re-renders at the end.
+    while (userMessageContainer.nextElementSibling) userMessageContainer.nextElementSibling.remove();
 
-        // Remove the assistant wrapper and everything after it
-        while (userMessageContainer.nextElementSibling) {
-            userMessageContainer.nextElementSibling.remove();
-        }
+    const newWrapper = document.createElement('div');
+    newWrapper.className = 'assistant-turn-wrapper in-progress';
+    chatHistory.appendChild(newWrapper);
 
-        // Truncate conversation history and update the user message content
-        let userCount = 0;
-        for (let i = 0; i < conversationHistory.length; i++) {
-            if (conversationHistory[i].role === 'user') {
-                if (userCount === turnIndex) {
-                    const truncated = conversationHistory.slice(0, i + 1);
-                    truncated[i] = { ...truncated[i], content: newText };
-                    setConversationHistory(truncated);
-                    break;
-                }
-                userCount++;
-            }
-        }
-
-        // Create a fresh assistant wrapper for the new response
-        const newWrapper = document.createElement('div');
-        newWrapper.className = 'assistant-turn-wrapper';
-        const sideButtons = document.createElement('div');
-        sideButtons.className = 'assistant-side-buttons';
-        newWrapper.appendChild(sideButtons);
-        const narratorEl = document.createElement('div');
-        narratorEl.className = 'message narrator-message';
-        newWrapper.appendChild(narratorEl);
-        chatHistory.appendChild(newWrapper);
-
-        setCurrentNarratorMessageElement(narratorEl);
-        setAccumulatedContent('');
-        setCurrentTurnToolCalls([]);
-        setCurrentTurnThinking('');
-        showTypingIndicator();
-        socket.emit('edit_message', { turn_index: turnIndex, new_content: newText });
-    };
-
-    if (hasLaterMessages) {
-        showConfirmPopup('Edit this message? All later messages will be deleted.', doEdit);
-    } else {
-        doEdit();
-    }
+    setCurrentNarratorMessageElement(null);
+    setAccumulatedContent('');
+    showTypingIndicator();
+    socket.emit('edit_message', { turn_id: turnId, new_content: newText });
 }

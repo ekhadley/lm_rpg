@@ -8,7 +8,7 @@ from narrator import Narrator
 from utils import (
     logger, listStoryNames, loadStoryInfo, makeNewStoryDir,
     historyExists, isValidGameSystem, listGameSystemNames,
-    archiveHistory, copyStory, archiveStoryDir, listStoryMarkdownFiles,
+    archiveHistory, copyStory, archiveStoryDir, renameStoryDir, listStoryMarkdownFiles,
     loadAllPreviousHistory,
 )
 
@@ -19,7 +19,7 @@ socket = SocketIO(app, cors_allowed_origins="*")
 global narrator
 narrator = None
 models = [
-    "anthropic/claude-opus-4.7",
+    "anthropic/claude-opus-4.8",
     "anthropic/claude-haiku-4.5",
     "openai/gpt-5.5",
     "openai/gpt-4o-mini",
@@ -116,22 +116,25 @@ def copy_story(data: dict[str, str]):
     else:
         emit('error', {"message": f"Failed to copy story '{source_story_name}'"})
 
-@socket.on('archive_history')
-def archive_history():
+@socket.on('summarize_history')
+def summarize_history():
     global narrator
     if narrator is None:
         emit('error', {"message": "No story selected"})
         return
     story_name = narrator.story_name
-    # Let the model save any state it needs before archiving
+    logger.debug(f"summarizing story: '{story_name}' -- sending compaction message to model")
+    # Let the model write the summary / save any state it needs from the full conversation
     narrator.handleUserMessage({"message": "System: archive story state"})
     if archiveHistory(story_name):
-        logger.debug(f"archived history for story: '{story_name}'")
-        # Clear the narrator's messages so the next user message starts fresh
+        logger.debug(f"archived full history to previous/ for story: '{story_name}'")
+        # Re-read the freshly-written summary into the prompt, then start fresh
+        narrator.refreshSystemPrompt()
+        logger.debug(f"refreshed system prompt from disk ({len(narrator.system_prompt)} chars), starting fresh conversation")
         narrator.clearMessages()
-        emit('history_archived', {"success": True})
+        emit('history_summarized', {"success": True})
     else:
-        emit('error', {"message": "No history to archive"})
+        emit('error', {"message": "No history to summarize"})
 
 @socket.on('delete_story')
 def delete_story(data: dict[str, str]):
@@ -148,6 +151,27 @@ def delete_story(data: dict[str, str]):
         emit('story_deleted', {"story_name": story_name})
     else:
         emit('error', {"message": f"Story '{story_name}' not found"})
+
+@socket.on('rename_story')
+def rename_story(data: dict[str, str]):
+    global narrator
+    old_name = data.get('old_name', '').strip()
+    new_name = data.get('new_name', '').strip()
+    if not old_name or not new_name:
+        emit('error', {"message": "Old and new story names are required"})
+        return
+    if new_name == old_name:
+        return
+    if new_name in listStoryNames():
+        emit('error', {"message": f"Story '{new_name}' already exists"})
+        return
+    if renameStoryDir(old_name, new_name):
+        if narrator is not None and narrator.story_name == old_name:
+            narrator.story_name = new_name
+        logger.debug(f"renamed story '{old_name}' -> '{new_name}'")
+        emit('story_renamed', {"old_name": old_name, "new_name": new_name})
+    else:
+        emit('error', {"message": f"Failed to rename story '{old_name}'"})
 
 @socket.on('get_system_instructions')
 def get_system_instructions():
@@ -210,26 +234,9 @@ def retry_response(data=None):
     if narrator is None:
         emit('error', {"message": "No story selected"})
         return
-    messages = narrator.provider.messages
-    turn_index = data.get('turn_index') if data else None
-
-    if turn_index is not None:
-        user_count = 0
-        for i, msg in enumerate(messages):
-            if msg.get("role") == "user":
-                if user_count == turn_index:
-                    narrator.provider.messages = messages[:i + 1]
-                    narrator.provider.run()
-                    narrator.saveMessages()
-                    return
-                user_count += 1
-    else:
-        for i in range(len(messages) - 1, -1, -1):
-            if messages[i].get("role") == "user":
-                narrator.provider.messages = messages[:i + 1]
-                narrator.provider.run()
-                narrator.saveMessages()
-                return
+    turn_id = data.get('turn_id') if data else None
+    if turn_id:
+        narrator.regenerate_turn(turn_id)
 
 @socket.on('edit_message')
 def edit_message(data):
@@ -237,23 +244,23 @@ def edit_message(data):
     if narrator is None:
         emit('error', {"message": "No story selected"})
         return
-    messages = narrator.provider.messages
-    turn_index = data.get('turn_index')
+    turn_id = data.get('turn_id')
     new_content = data.get('new_content', '')
-    if turn_index is None or not new_content:
-        emit('error', {"message": "turn_index and new_content are required"})
+    if not turn_id or not new_content:
+        emit('error', {"message": "turn_id and new_content are required"})
         return
+    narrator.edit_turn(turn_id, new_content)
 
-    user_count = 0
-    for i, msg in enumerate(messages):
-        if msg.get("role") == "user":
-            if user_count == turn_index:
-                messages[i]["content"] = new_content
-                narrator.provider.messages = messages[:i + 1]
-                narrator.provider.run()
-                narrator.saveMessages()
-                return
-            user_count += 1
+@socket.on('switch_branch')
+def switch_branch(data):
+    global narrator
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
+    turn_id = data.get('turn_id')
+    direction = data.get('dir', 1)
+    if turn_id:
+        narrator.switch_branch(turn_id, direction)
 
 def get_stories_with_info():
     """Helper to load all stories with their info."""

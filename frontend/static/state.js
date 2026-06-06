@@ -21,11 +21,11 @@ export const fileViewerTitle = document.getElementById('file-viewer-title');
 export const fileViewerBody = document.getElementById('file-viewer-body');
 export const fileViewerToc = document.getElementById('file-viewer-toc');
 export const fileViewerClose = document.getElementById('file-viewer-close');
-export const archiveButton = document.getElementById('archive-button');
+export const summarizeButton = document.getElementById('summarize-button');
 export const themeToggleBtn = document.getElementById('theme-toggle-btn');
-export const archivePopup = document.getElementById('archive-popup');
-export const archivePopupCancel = document.getElementById('archive-popup-cancel');
-export const archivePopupConfirm = document.getElementById('archive-popup-confirm');
+export const summarizePopup = document.getElementById('summarize-popup');
+export const summarizePopupCancel = document.getElementById('summarize-popup-cancel');
+export const summarizePopupConfirm = document.getElementById('summarize-popup-confirm');
 export const costButton = document.getElementById('cost-button');
 export const costPopup = document.getElementById('cost-popup');
 export const costTotalTokens = document.getElementById('cost-total-tokens');
@@ -78,8 +78,6 @@ export let accumulatedContent = '';
 export let pendingStoryName = null;
 
 // Turn tracking
-export let currentTurnToolCalls = [];
-export let currentTurnThinking = '';
 export let isToolCallInProgress = false;
 export let isThinkingInProgress = false;
 
@@ -91,7 +89,5 @@ export function setCurrentStory(v) { currentStory = v; }
 export function setLastNarratorMessageElement(v) { lastNarratorMessageElement = v; }
 export function setAccumulatedContent(v) { accumulatedContent = v; }
 export function setPendingStoryName(v) { pendingStoryName = v; }
-export function setCurrentTurnToolCalls(v) { currentTurnToolCalls = v; }
-export function setCurrentTurnThinking(v) { currentTurnThinking = v; }
 export function setIsToolCallInProgress(v) { isToolCallInProgress = v; }
 export function setIsThinkingInProgress(v) { isThinkingInProgress = v; }
