@@ -1,5 +1,6 @@
 import os
 import json
+import uuid
 import shutil
 import logging
 from history import TurnTree
@@ -59,11 +60,11 @@ STORIES_ROOT_DIR = "stories"
 STORIES_ARCHIVE_DIR = "stories/.archived"
 INSTRUCTIONS_DIR = "instructions"
 
-def listStoryNames() -> list[str]:
+def listStoryIds() -> list[str]:
     return sorted(f for f in os.listdir("./stories") if not f.startswith('.'))
 
-def listStoryMarkdownFiles(story_name: str) -> list[str]:
-    story_dir = f"./{STORIES_ROOT_DIR}/{story_name}"
+def listStoryMarkdownFiles(story_id: str) -> list[str]:
+    story_dir = f"./{STORIES_ROOT_DIR}/{story_id}"
     if not os.path.exists(story_dir):
         return []
     return sorted(f for f in os.listdir(story_dir) if f.endswith('.md'))
@@ -80,61 +81,61 @@ def listGameSystemNames() -> list[str]:
     """Only return systems that are actually usable (have instructions)."""
     return sorted([f.removesuffix('.md') for f in os.listdir(INSTRUCTIONS_DIR) if f.endswith('.md')])
 
-def makeNewStoryDir(story_name: str, system: str, model_name: str):
-    story_dir = f"./stories/{story_name}"
+def makeNewStoryDir(display_name: str, system: str, model_name: str) -> str:
+    """Create a new story directory (named by a fresh uuid) and return its id."""
+    story_id = uuid.uuid4().hex[:16]
+    story_dir = f"./stories/{story_id}"
     os.mkdir(story_dir)
     with open(os.path.join(story_dir, "info.json"), "w") as f:
         json.dump({
             "system": system,
             "model": model_name,
-            "story_name": story_name,
+            "story_name": display_name,
         }, f, indent=4)
+    return story_id
 
-def archiveStoryDir(story_name: str) -> bool:
-    story_dir = f"./{STORIES_ROOT_DIR}/{story_name}"
+def archiveStoryDir(story_id: str) -> bool:
+    story_dir = f"./{STORIES_ROOT_DIR}/{story_id}"
     if not os.path.exists(story_dir):
         return False
     os.makedirs(f"./{STORIES_ARCHIVE_DIR}", exist_ok=True)
-    shutil.move(story_dir, f"./{STORIES_ARCHIVE_DIR}/{story_name}")
+    shutil.move(story_dir, f"./{STORIES_ARCHIVE_DIR}/{story_id}")
     return True
 
-def renameStoryDir(old_name: str, new_name: str) -> bool:
-    old_dir = f"./{STORIES_ROOT_DIR}/{old_name}"
-    new_dir = f"./{STORIES_ROOT_DIR}/{new_name}"
-    if not os.path.exists(old_dir) or os.path.exists(new_dir):
+def renameStory(story_id: str, new_name: str) -> bool:
+    """Rename is just changing the display name in info.json; the uuid directory is unchanged."""
+    info_path = os.path.join(f"./{STORIES_ROOT_DIR}/{story_id}", "info.json")
+    if not os.path.exists(info_path):
         return False
-    shutil.move(old_dir, new_dir)
-    info_path = os.path.join(new_dir, "info.json")
-    if os.path.exists(info_path):
-        with open(info_path, "r") as f:
-            info = json.load(f)
-        info["story_name"] = new_name
-        with open(info_path, "w") as f:
-            json.dump(info, f, indent=4)
+    with open(info_path, "r") as f:
+        info = json.load(f)
+    info["story_name"] = new_name
+    with open(info_path, "w") as f:
+        json.dump(info, f, indent=4)
     return True
 
-def loadStoryInfo(story_name: str, model_name: str = None, system_name: str = None) -> dict[str, str]:
-    info_path = os.path.join(f"./stories/{story_name}", "info.json")
+def loadStoryInfo(story_id: str, model_name: str = None, system_name: str = None) -> dict[str, str]:
+    info_path = os.path.join(f"./stories/{story_id}", "info.json")
     if not os.path.exists(info_path):
         # Create info.json if it doesn't exist, using provided model and system
         if model_name and system_name:
-            story_dir = f"./stories/{story_name}"
+            story_dir = f"./stories/{story_id}"
             os.makedirs(story_dir, exist_ok=True)
             with open(info_path, "w") as f:
                 json.dump({
                     "system": system_name,
                     "model": model_name,
-                    "story_name": story_name,
+                    "story_name": story_id,
                 }, f, indent=4)
         else:
-            raise FileNotFoundError(f"info.json not found for story '{story_name}' and no model/system provided to create it")
+            raise FileNotFoundError(f"info.json not found for story '{story_id}' and no model/system provided to create it")
     with open(info_path, "r") as f:
         return json.load(f)
 
-def historyExists(story_name: str) -> bool:
-    return os.path.exists(f"./stories/{story_name}/history.json")
+def historyExists(story_id: str) -> bool:
+    return os.path.exists(f"./stories/{story_id}/history.json")
 
-def getFullStoryInstruction(system_name: str, story_name: str) -> str:
+def getFullStoryInstruction(system_name: str, story_id: str) -> str:
     """Fetches the system instructions and appends any existing story files (pc.md, story_plan.md, story_summary.md).
     
     Each section is wrapped in XML tags for clarity:
@@ -156,21 +157,21 @@ def getFullStoryInstruction(system_name: str, story_name: str) -> str:
     result_parts.append(f"<system_instructions>\n{system_instructions}\n</system_instructions>")
     
     # Load story plan (optional)
-    story_plan_path = f"{STORIES_ROOT_DIR}/{story_name}/story_plan.md"
+    story_plan_path = f"{STORIES_ROOT_DIR}/{story_id}/story_plan.md"
     if os.path.exists(story_plan_path):
         with open(story_plan_path, 'r') as f:
             story_plan = f.read()
         result_parts.append(f"<story_plan>\n{story_plan}\n</story_plan>")
     
     # Load player character (optional)
-    pc_path = f"{STORIES_ROOT_DIR}/{story_name}/pc.md"
+    pc_path = f"{STORIES_ROOT_DIR}/{story_id}/pc.md"
     if os.path.exists(pc_path):
         with open(pc_path, 'r') as f:
             player_character = f.read()
         result_parts.append(f"<player_character>\n{player_character}\n</player_character>")
     
     # Load story summary (optional)
-    story_summary_path = f"{STORIES_ROOT_DIR}/{story_name}/story_summary.md"
+    story_summary_path = f"{STORIES_ROOT_DIR}/{story_id}/story_summary.md"
     if os.path.exists(story_summary_path):
         with open(story_summary_path, 'r') as f:
             story_summary = f.read()
@@ -180,43 +181,43 @@ def getFullStoryInstruction(system_name: str, story_name: str) -> str:
 
 # === History Archive Functions ===
 
-def getPreviousHistoryDir(story_name: str) -> str:
+def getPreviousHistoryDir(story_id: str) -> str:
     """Get the path to the previous history directory for a story."""
-    return f"./{STORIES_ROOT_DIR}/{story_name}/previous"
+    return f"./{STORIES_ROOT_DIR}/{story_id}/previous"
 
-def getNextArchiveNumber(story_name: str) -> int:
+def getNextArchiveNumber(story_id: str) -> int:
     """Get the next available archive number (0, 1, 2...).
-    
+
     Archives are numbered sequentially starting from 0.
     0 = oldest archived, higher numbers = more recently archived.
     """
-    prev_dir = getPreviousHistoryDir(story_name)
+    prev_dir = getPreviousHistoryDir(story_id)
     if not os.path.exists(prev_dir):
         return 0
     existing = [f for f in os.listdir(prev_dir) if f.endswith('.json')]
     return len(existing)
 
-def archiveHistory(story_name: str) -> bool:
+def archiveHistory(story_id: str) -> bool:
     """Move history.json to previous/{n}.json and delete history.json.
-    
+
     Returns True if archive was successful, False if no history to archive.
     """
-    history_path = f"./{STORIES_ROOT_DIR}/{story_name}/history.json"
+    history_path = f"./{STORIES_ROOT_DIR}/{story_id}/history.json"
     if not os.path.exists(history_path):
         return False
-    prev_dir = getPreviousHistoryDir(story_name)
+    prev_dir = getPreviousHistoryDir(story_id)
     os.makedirs(prev_dir, exist_ok=True)
-    archive_num = getNextArchiveNumber(story_name)
+    archive_num = getNextArchiveNumber(story_id)
     shutil.move(history_path, f"{prev_dir}/{archive_num}.json")
     return True
 
-def loadAllPreviousHistory(story_name: str) -> list[dict]:
+def loadAllPreviousHistory(story_id: str) -> list[dict]:
     """Load all previous history files in order (oldest first).
     
     Returns a flat list of all messages from all previous history files,
     combined in chronological order (0.json first, then 1.json, etc.).
     """
-    prev_dir = getPreviousHistoryDir(story_name)
+    prev_dir = getPreviousHistoryDir(story_id)
     if not os.path.exists(prev_dir):
         return []
     
@@ -239,70 +240,78 @@ def loadAllPreviousHistory(story_name: str) -> list[dict]:
     
     return all_messages
 
-def copyStory(source_story_name: str, new_story_name: str, new_model_name: str, copy_all_history: bool = False) -> bool:
-    """Copy a story to a new story directory.
-    
+def copyStory(source_story_id: str, new_name: str, new_model_name: str, copy_pc: bool = True, copy_plan: bool = True, copy_summary: bool = True, copy_history: bool = False, copy_other: bool = True) -> str | None:
+    """Copy a story into a fresh uuid directory.
+
     Args:
-        source_story_name: Name of the source story to copy
-        new_story_name: Name for the new story
+        source_story_id: Id (uuid directory) of the source story to copy
+        new_name: Display name for the new story
         new_model_name: Model name for the new story
-        copy_all_history: If True, copy all history files including archived conversations.
-                         If False, only copy markdown files (pc.md, story_plan.md, story_summary.md)
-    
+        copy_pc: Copy pc.md
+        copy_plan: Copy story_plan.md
+        copy_summary: Copy story_summary.md
+        copy_history: Copy history.json and archived conversations (previous/)
+        copy_other: Copy any other story files (e.g. npc character sheets)
+
     Returns:
-        True if copy was successful, False otherwise
+        The new story's id if successful, None otherwise.
     """
-    source_dir = f"./{STORIES_ROOT_DIR}/{source_story_name}"
-    new_dir = f"./{STORIES_ROOT_DIR}/{new_story_name}"
-    
-    # Check if source exists
+    source_dir = f"./{STORIES_ROOT_DIR}/{source_story_id}"
     if not os.path.exists(source_dir):
-        return False
-    
-    # Check if destination already exists
-    if os.path.exists(new_dir):
-        return False
-    
+        return None
+
+    new_story_id = uuid.uuid4().hex[:16]
+    new_dir = f"./{STORIES_ROOT_DIR}/{new_story_id}"
+
     try:
         # Create new directory
         os.makedirs(new_dir, exist_ok=True)
-        
+
         # Load source story info
-        source_info = loadStoryInfo(source_story_name)
+        source_info = loadStoryInfo(source_story_id)
         source_system = source_info.get('system', 'hp')
-        
+
         # Create new info.json with new model
         with open(os.path.join(new_dir, "info.json"), "w") as f:
             json.dump({
                 "system": source_system,
                 "model": new_model_name,
-                "story_name": new_story_name,
+                "story_name": new_name,
             }, f, indent=4)
-        
-        # Copy markdown files (always copied)
-        markdown_files = ["pc.md", "story_plan.md", "story_summary.md"]
-        for md_file in markdown_files:
-            source_path = os.path.join(source_dir, md_file)
-            if os.path.exists(source_path):
-                shutil.copy2(source_path, os.path.join(new_dir, md_file))
-        
+
+        # Copy the named markdown files that are toggled on
+        named_files = {"pc.md": copy_pc, "story_plan.md": copy_plan, "story_summary.md": copy_summary}
+        for md_file, include in named_files.items():
+            if include:
+                source_path = os.path.join(source_dir, md_file)
+                if os.path.exists(source_path):
+                    shutil.copy2(source_path, os.path.join(new_dir, md_file))
+
+        # Copy any other loose story files (npc sheets, etc.), skipping the ones handled separately
+        if copy_other:
+            reserved = set(named_files) | {"info.json", "history.json", "previous"}
+            for name in os.listdir(source_dir):
+                source_path = os.path.join(source_dir, name)
+                if name not in reserved and os.path.isfile(source_path):
+                    shutil.copy2(source_path, os.path.join(new_dir, name))
+
         # Copy history files if requested
-        if copy_all_history:
+        if copy_history:
             # Copy current history.json if it exists
             source_history = os.path.join(source_dir, "history.json")
             if os.path.exists(source_history):
                 shutil.copy2(source_history, os.path.join(new_dir, "history.json"))
-            
+
             # Copy previous history directory if it exists
-            source_prev_dir = getPreviousHistoryDir(source_story_name)
+            source_prev_dir = getPreviousHistoryDir(source_story_id)
             if os.path.exists(source_prev_dir):
-                new_prev_dir = getPreviousHistoryDir(new_story_name)
+                new_prev_dir = getPreviousHistoryDir(new_story_id)
                 shutil.copytree(source_prev_dir, new_prev_dir)
-        
-        return True
+
+        return new_story_id
     except Exception as e:
         logger.error(f"Error copying story: {e}")
         # Clean up on error
         if os.path.exists(new_dir):
             shutil.rmtree(new_dir)
-        return False
+        return None

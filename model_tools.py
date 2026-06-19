@@ -104,14 +104,14 @@ class Toolbox:
 def list_story_files_tool_handler(**kwargs) -> list[str]:
     """list_files: Lists all files in the current story directory.
     """
-    files = [f for f in os.listdir(f"./stories/{kwargs['story_name']}") if f.endswith(".md")]
+    files = [f for f in os.listdir(f"./stories/{kwargs['story_id']}") if f.endswith(".md")]
     return files
 
 def read_story_file_tool_handler(file_name: str, **kwargs) -> str:
     """read_file: Read the contents of a file in the current story directory.
     file_name (string): Name of the file to be read. Should include the file extension, and not include any parent folders or subfolders.
     """
-    with open(f"./stories/{kwargs['story_name']}/{file_name}", 'r') as file:
+    with open(f"./stories/{kwargs['story_id']}/{file_name}", 'r') as file:
         content = file.read()
     return content
 
@@ -122,8 +122,8 @@ def write_story_file_tool_handler(file_name: str, contents: str, **kwargs) -> st
     """
     if not file_name.endswith(".md"):
         file_name += ".md"
-    exists = os.path.exists(f"./stories/{kwargs['story_name']}/{file_name}")
-    with open(f"./stories/{kwargs['story_name']}/{file_name}", 'w') as file:
+    exists = os.path.exists(f"./stories/{kwargs['story_id']}/{file_name}")
+    with open(f"./stories/{kwargs['story_id']}/{file_name}", 'w') as file:
         file.write(contents)
     if exists: return "File edited successfully."
     else: return "File saved successfully."
@@ -135,8 +135,8 @@ def append_story_file_tool_handler(file_name: str, contents: str, **kwargs) -> s
     """
     if not file_name.endswith(".md"):
         file_name += ".md"
-    exists = os.path.exists(f"./stories/{kwargs['story_name']}/{file_name}")
-    with open(f"./stories/{kwargs['story_name']}/{file_name}", 'a') as file:
+    exists = os.path.exists(f"./stories/{kwargs['story_id']}/{file_name}")
+    with open(f"./stories/{kwargs['story_id']}/{file_name}", 'a') as file:
         file.write("\n" + contents)
     if exists: return "Contents appended to file successfully."
     else: return "File created and contents added successfully."
@@ -178,17 +178,17 @@ BASE_HANDLERS = [
     roll_dice_tool_handler,
 ]
 
-def _make_toolbox(story_name: str, system_name: str, extra_handlers: list[Callable] = []) -> Toolbox:
-    return Toolbox(BASE_HANDLERS + extra_handlers, default_kwargs={"story_name": story_name, "system_name": system_name})
+def _make_toolbox(story_id: str, system_name: str, extra_handlers: list[Callable] = []) -> Toolbox:
+    return Toolbox(BASE_HANDLERS + extra_handlers, default_kwargs={"story_id": story_id, "system_name": system_name})
 
-def hp_toolbox(story_name: str, system_name: str) -> Toolbox:
-    return _make_toolbox(story_name, system_name)
+def hp_toolbox(story_id: str, system_name: str) -> Toolbox:
+    return _make_toolbox(story_id, system_name)
 
-def dnd5e_toolbox(story_name: str, system_name: str) -> Toolbox:
-    return _make_toolbox(story_name, system_name)
+def dnd5e_toolbox(story_id: str, system_name: str) -> Toolbox:
+    return _make_toolbox(story_id, system_name)
 
-def twd_toolbox(story_name: str, system_name: str) -> Toolbox:
-    return _make_toolbox(story_name, system_name)
+def twd_toolbox(story_id: str, system_name: str) -> Toolbox:
+    return _make_toolbox(story_id, system_name)
 
 SYSTEM_TOOLBOXES: dict[str, Callable] = {
     "hp": hp_toolbox,

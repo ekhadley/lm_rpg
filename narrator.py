@@ -8,27 +8,35 @@ from history import TurnTree
 from flask_socketio import SocketIO
     
 class Narrator:
-    def __init__(self, model_name: str, story_name: str, system_name: str, socket: SocketIO):
+    def __init__(self, model_name: str, story_id: str, system_name: str, socket: SocketIO, cache_mode: str = "1h"):
         self.model_name: str = model_name
         self.system_name: str = system_name
-        self.story_name: str = story_name
-        self.tb: Toolbox = SYSTEM_TOOLBOXES[system_name](story_name, system_name)
+        self.story_id: str = story_id
+        self.tb: Toolbox = SYSTEM_TOOLBOXES[system_name](story_id, system_name)
         self.socket: SocketIO = socket
-        self.system_prompt = getFullStoryInstruction(system_name, story_name)
-        self.story_history_path = f"./stories/{story_name}/history.json"
-        self.thinking_effort = "xhigh"
+        self.system_prompt = getFullStoryInstruction(system_name, story_id)
+        self.story_history_path = f"./stories/{story_id}/history.json"
+        self.thinking_effort = "max"
         self.tree = TurnTree.empty()
 
         self.provider = OpenRouterProvider(
             model_name=model_name,
             system_prompt=self.system_prompt,
             thinking_effort=self.thinking_effort,
+            cache_mode=cache_mode,
             toolbox=self.tb,
             callback_handler=WebCallbackHandler(socket)
         )
 
     def _systemMessage(self) -> dict:
-        return {"role": "system", "content": [{"type": "text", "text": self.system_prompt, "cache_control": {"type": "ephemeral"}}]}
+        block = {"type": "text", "text": self.system_prompt}
+        if self.provider.cacheControl():
+            block["cache_control"] = self.provider.cacheControl()
+        return {"role": "system", "content": [block]}
+
+    def setCacheMode(self, mode: str) -> None:
+        self.provider.cache_mode = mode
+        self._rebuildContext()  # refresh the system message's cache_control
 
     def _rebuildContext(self):
         """Set the provider's flat message list to [system] + the active branch."""
@@ -55,7 +63,7 @@ class Narrator:
 
     def refreshSystemPrompt(self):
         """Re-read story files (including a freshly-written summary) into the system prompt."""
-        self.system_prompt = getFullStoryInstruction(self.system_name, self.story_name)
+        self.system_prompt = getFullStoryInstruction(self.system_name, self.story_id)
 
     def clearMessages(self):
         """Reset to an empty tree. Used after summarization."""
@@ -78,7 +86,7 @@ class Narrator:
 
     def loadStory(self):
         # Load previous history for UI display (not sent to model)
-        previous_messages = loadAllPreviousHistory(self.story_name)
+        previous_messages = loadAllPreviousHistory(self.story_id)
         if previous_messages:
             frontend_previous = self._transformMessagesForFrontend(previous_messages)
             self.socket.emit('previous_history', frontend_previous)
@@ -88,12 +96,17 @@ class Narrator:
             self.saveMessages()  # persist migration / live system prompt
             self._emitHistory()
         elif not previous_messages:
-            self.provider.addUserMessage("System: start of story")
-            self._runIntoTurn(None)
-            self._rebuildContext()
-            self.saveMessages()
-            self._emitHistory()
+            self.socket.emit('story_empty')
         self.socket.emit('assistant_ready')
+        self.socket.emit('turn_end', {"cost_stats": self.provider.getCostStats()})
+
+    def startStory(self):
+        """Kick off a brand-new story (triggered by the frontend's Start Story button)."""
+        self.provider.addUserMessage("System: start of story")
+        self._runIntoTurn(None)
+        self._rebuildContext()
+        self.saveMessages()
+        self._emitHistory()
         self.socket.emit('turn_end', {"cost_stats": self.provider.getCostStats()})
     
     def _transformMessagesForFrontend(self, messages: list[dict]) -> list[dict]:

@@ -1,11 +1,11 @@
-import { userInput, summarizePopup, summarizeButton, selectStoryConfigModal, copyStoryModal, exportButton, socket, fileViewerOverlay, debugModal, debugModalClose } from './state.js';
+import { userInput, summarizePopup, summarizeButton, selectStoryConfigModal, copyStoryModal, exportButton, socket, fileViewerOverlay, debugModal, debugModalClose, settingsModal } from './state.js';
 import { setPendingStoryName } from './state.js';
 import { initAllDropdowns } from './dropdowns.js';
 import { initStory, selectStoryDirectly, closeCopyStoryModal } from './story.js';
 import { initChat } from './chat.js';
 import { exportConversation } from './debugViewer.js';
 import {
-    setupCostPopupBehavior, initTheme,
+    setupCostPopupBehavior, initTheme, initSettings,
     showSummarizePopup, hideSummarizePopup, positionSummarizePopup,
     initConfirmPopup, hideConfirmPopup,
 } from './ui.js';
@@ -30,6 +30,7 @@ window.onload = function() {
     setupCostPopupBehavior();
     initConfirmPopup();
     initTheme();
+    initSettings();
 
     if (exportButton) exportButton.addEventListener('click', exportConversation);
     if (debugModalClose) debugModalClose.addEventListener('click', () => debugModal.classList.remove('show'));
@@ -80,6 +81,7 @@ window.onload = function() {
             if (copyStoryModal && copyStoryModal.classList.contains('show')) closeCopyStoryModal();
             if (fileViewerOverlay && fileViewerOverlay.classList.contains('show')) fileViewerOverlay.classList.remove('show');
             if (debugModal && debugModal.classList.contains('show')) debugModal.classList.remove('show');
+            if (settingsModal && settingsModal.classList.contains('show')) settingsModal.classList.remove('show');
             hideConfirmPopup();
         }
     });

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-LM RPG is an LLM-powered text RPG engine. A Flask/SocketIO backend streams LLM responses (via OpenRouter) to a vanilla JS frontend. The LLM acts as game master, using tool calls (dice rolls, file read/write) to manage game state. Multiple game systems (Harry Potter, D&D 5e, Game of Thrones) are pluggable.
+LM RPG is an LLM-powered text RPG engine. A Flask/SocketIO backend streams LLM responses (via OpenRouter) to a vanilla JS frontend. The LLM acts as game master, using tool calls (dice rolls, file read/write) to manage game state. Multiple game systems (Harry Potter, D&D 5e, The Walking Dead) are pluggable.
 
 ## Running
 
@@ -18,11 +18,12 @@ Requires `OPENROUTER_API_KEY` in `.env`. Set `DEBUG=1` for verbose logging.
 
 ## Project Structure
 
-**Backend flow:** `app.py` (Flask+SocketIO routes) → `narrator.py` (orchestration, system prompt assembly) → `openrouter.py` (SSE streaming, tool call loop) → `model_tools.py` (tool execution)
+**Backend flow:** `app.py` (Flask+SocketIO routes) → `narrator.py` (orchestration, system prompt assembly, history tree) → `openrouter.py` (SSE streaming, tool call loop) → `model_tools.py` (tool execution)
 
-- **app.py** — Server entry point. SocketIO event handlers for story CRUD (create, copy, delete), user messages, retry, archive. Global `narrator` object holds active state. Serves stories at `/stories/<name>` for direct linking.
-- **narrator.py** — Loads story context (plan, PC, summary) into system prompt via XML tags. Looks up the system's toolbox factory in `model_tools.SYSTEM_TOOLBOXES`. Transforms messages between OpenRouter and frontend formats. Thinking effort set to "xhigh".
-- **openrouter.py** — `OpenRouterProvider` manages conversation history and streams responses. `OpenRouterStream` parses SSE with retry logic. Handles reasoning/thinking output (both `delta.reasoning` and `delta.reasoning_details` formats) and multi-turn tool calling loops. Tracks per-message usage/cost data via `getCostStats()`.
+- **app.py** — Server entry point. SocketIO event handlers for story CRUD (create, copy, delete), user messages, retry, edit, branch switching, archive, and cache-mode setting (a global `settings` dict). Global `narrator` object holds active state. Serves stories at `/stories/<name>` for direct linking.
+- **narrator.py** — Owns the `TurnTree` (branching conversation history; see `history.py`). Loads story context (plan, PC, summary) into system prompt via XML tags. Rebuilds the provider's flat message list as `[system] + active branch` on each turn. Looks up the system's toolbox factory in `model_tools.SYSTEM_TOOLBOXES`. Transforms messages between OpenRouter and frontend formats. Branch ops: `regenerate_turn` (retry → new sibling), `edit_turn` (edit → new branch from grandparent), `switch_branch` (navigate siblings). Thinking effort set to "max".
+- **history.py** — `TurnTree`: a branching tree of turns. Each node is one user message OR one narrator response (the assistant/tool messages from a single tool-calling loop); nodes alternate role down a path. The active path is reconstructed by walking `parent` links up from `current_leaf`. The system message is never stored — it's prepended live when building model context. Handles serialize/deserialize and `migrate_from_flat` for legacy flat-list histories.
+- **openrouter.py** — `OpenRouterProvider` holds the flat message list (rebuilt by the narrator from the active branch) and streams responses. Supports prompt caching via `cache_mode` ("none" | "5m" | "1h") with a moving cache breakpoint (`_with_cache_anchor`). `OpenRouterStream` parses SSE with retry logic. Handles reasoning/thinking output (both `delta.reasoning` and `delta.reasoning_details` formats) and multi-turn tool calling loops. Tracks per-message usage/cost data via `getCostStats()`.
 - **model_tools.py** — Tool definitions are plain functions with structured docstrings that get auto-parsed into OpenAI function schemas. `Toolbox` class manages registration, schema generation, and execution. `BASE_HANDLERS` are shared by every system; `SYSTEM_TOOLBOXES` maps each system name to a factory. Built-in tools: `list_story_files`, `read_story_file`, `write_story_file`, `append_story_file`, `roll_dice`.
 - **callbacks.py** — `WebCallbackHandler` emits SocketIO events for streaming text, thinking, and tool calls to the frontend. Tracks output state transitions.
 - **utils.py** — Story/system directory management, history archival (current → `previous/{n}.json`), story copying, colored logging.
@@ -43,8 +44,8 @@ Requires `OPENROUTER_API_KEY` in `.env`. Set `DEBUG=1` for verbose logging.
 **Game systems**:
 - `instructions/core.md` — Shared GM instructions loaded for every system.
 - `instructions/{name}.md` — Per-system ruleset (presence is what makes a system valid).
-- Toolbox factory for the system lives in `model_tools.SYSTEM_TOOLBOXES`.
-- Files prefixed with `_` in `instructions/` (e.g. `_story_planning_context.md`, `_hp.md`) are archived/reference material, not loaded by code.
+- Toolbox factory for the system lives in `model_tools.SYSTEM_TOOLBOXES`. Currently registered: `hp`, `dnd5e`, `twd` (all share `BASE_HANDLERS`). An instruction file with no registered toolbox (e.g. `got.md`) is not an active system.
+- Files prefixed with `_` in `instructions/` (e.g. `_story_planning_context.md`, `_hp.md`, `_core.md`) are archived/reference material, not loaded by code.
 
 **Stories** (`stories/{name}/`): Each is a self-contained directory with `info.json`, `history.json`, optional `pc.md`, `story_plan.md`, `story_summary.md`, additional character `.md` files, and a `previous/` folder for archived conversations.
 
@@ -54,7 +55,8 @@ Requires `OPENROUTER_API_KEY` in `.env`. Set `DEBUG=1` for verbose logging.
 - **Message flow**: User input → SocketIO → narrator → OpenRouter stream → callbacks emit SocketIO events → frontend renders incrementally.
 - **System prompt** is assembled from `instructions/core.md` + `instructions/{system}.md` + optional story files, each wrapped in XML tags (`<core_instructions>`, `<system_instructions>`, `<story_plan>`, etc.). System prompt is refreshed on history load (live version, not frozen).
 - **Reasoning rows**: Each assistant turn renders as an ordered stack of collapsible reasoning rows (reasoning chunks + tool calls + dice, in the sequence the model produced them) interleaved with narration blocks. A row shows a "Reasoning" label + gears icon, a `…` animation while reasoning is ongoing, and expands on click. Tool calls use orange styling to stand apart from reasoning text.
-- **History archiving**: Current conversation can be archived to `previous/{n}.json` and a fresh conversation started, with archived history displayed above a separator.
+- **Branching history (`TurnTree`)**: History is a tree, not a flat list. Retrying a turn adds a new sibling branch; editing a user message branches from the grandparent; the frontend can switch between sibling branches. Only the active path (root → `current_leaf`) is sent to the model. Persisted as a serialized tree in `history.json`; legacy flat histories are migrated on load.
+- **History archiving**: Distinct from branching. The whole conversation can be archived to `previous/{n}.json` (e.g. after summarization) and a fresh tree started, with archived history displayed above a separator.
 - **No tests or CI** exist currently.
 - **No default browser dialogs** — Never use `alert()`, `confirm()`, or `prompt()`. Always use custom-styled popups/modals.
 

@@ -6,9 +6,9 @@ from flask import Flask, render_template, redirect, url_for
 from narrator import Narrator
 
 from utils import (
-    logger, listStoryNames, loadStoryInfo, makeNewStoryDir,
+    logger, listStoryIds, loadStoryInfo, makeNewStoryDir,
     historyExists, isValidGameSystem, listGameSystemNames,
-    archiveHistory, copyStory, archiveStoryDir, renameStoryDir, listStoryMarkdownFiles,
+    archiveHistory, copyStory, archiveStoryDir, renameStory, listStoryMarkdownFiles,
     loadAllPreviousHistory,
 )
 
@@ -18,7 +18,9 @@ socket = SocketIO(app, cors_allowed_origins="*")
 
 global narrator
 narrator = None
+settings = {"cache_mode": "1h"}  # "none" | "5m" | "1h"
 models = [
+    "anthropic/claude-fable-5",
     "anthropic/claude-opus-4.8",
     "anthropic/claude-haiku-4.5",
     "openai/gpt-5.5",
@@ -27,38 +29,58 @@ models = [
     "moonshotai/kimi-k2.5",
 ]
 
-def init_narrator(story_name: str, story_info: dict, model_name: str) -> Narrator:
-    logger.debug(f"{'loading existing' if historyExists(story_name) else 'creating new'} history for story: '{story_name}'")
+def init_narrator(story_id: str, story_info: dict, model_name: str) -> Narrator:
+    logger.debug(f"{'loading existing' if historyExists(story_id) else 'creating new'} history for story: '{story_id}'")
     return Narrator(
         model_name = model_name,
         system_name = story_info["system"],
-        story_name = story_name,
+        story_id = story_id,
         socket = socket,
+        cache_mode = settings["cache_mode"],
     )
+
+@socket.on('set_settings')
+def set_settings(data: dict[str, str]):
+    cache_mode = data.get('cache_mode')
+    if cache_mode not in ("none", "5m", "1h"):
+        emit('error', {"message": f"Invalid cache mode: {cache_mode}"})
+        return
+    settings["cache_mode"] = cache_mode
+    if narrator is not None:
+        narrator.setCacheMode(cache_mode)
+    logger.debug(f"cache mode set to '{cache_mode}'")
 
 @socket.on('select_story')
 def select_story(data: dict[str, str]):
     logger.debug(f"selected story: '{data['selected_story']}'")
-    story_name = data['selected_story']
+    story_id = data['selected_story']
     model_name = data.get('model_name')
     system_name = data.get('system_name')
-    story_info = loadStoryInfo(story_name, model_name=model_name, system_name=system_name)
+    story_info = loadStoryInfo(story_id, model_name=model_name, system_name=system_name)
     system_name = story_info.get("system")
     if not system_name or not isValidGameSystem(system_name):
-        emit('error', {"message": f"Invalid or unavailable system for story '{story_name}': {system_name}"})
+        emit('error', {"message": f"Invalid or unavailable system for story '{story_id}': {system_name}"})
         return
     model_name = story_info.get("model", data.get('model_name'))
 
     global narrator
-    narrator = init_narrator(story_name, story_info, model_name)
-    logger.debug(f"narrator initialized for story: '{story_name}'")
+    narrator = init_narrator(story_id, story_info, model_name)
+    logger.debug(f"narrator initialized for story: '{story_id}'")
     narrator.loadStory()
     emit('story_locked', {
         "model_name": narrator.model_name,
         "system_name": story_info["system"],
-        "story_files": listStoryMarkdownFiles(story_name),
+        "story_files": listStoryMarkdownFiles(story_id),
     })
     logger.info(f"narrator initialized: {narrator}")
+
+@socket.on('start_story')
+def start_story():
+    global narrator
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
+    narrator.startStory()
 
 @socket.on('user_message')
 def handle_user_message(data: dict[str, str]):
@@ -70,51 +92,51 @@ def handle_user_message(data: dict[str, str]):
 
 @socket.on('create_story')
 def create_story(data: dict[str, str]):
-    story_name = data['story_name'].strip()
+    display_name = data['story_name'].strip()
     system = data['system_name']
     model_name = data['model_name']
-    if story_name:
+    if display_name:
         if not isValidGameSystem(system):
             emit('error', {"message": f"Invalid or unavailable system '{system}'"})
             return
-        makeNewStoryDir(story_name, system, model_name)
+        story_id = makeNewStoryDir(display_name, system, model_name)
         emit('story_created', {
-            "story_name": story_name,
+            "id": story_id,
+            "name": display_name,
             "system": system,
             "model": model_name
         })
 
 @socket.on('copy_story')
 def copy_story(data: dict[str, str]):
-    source_story_name = data.get('source_story')
-    new_story_name = data.get('new_story_name', '').strip()
+    source_story_id = data.get('source_story')
+    new_name = data.get('new_story_name', '').strip()
     model_name = data.get('model_name')
-    copy_all_history = data.get('copy_all_history', False)
-    
-    if not source_story_name or not new_story_name:
-        emit('error', {"message": "Source story name and new story name are required"})
+    copy_pc = data.get('copy_pc', True)
+    copy_plan = data.get('copy_plan', True)
+    copy_summary = data.get('copy_summary', True)
+    copy_history = data.get('copy_history', False)
+    copy_other = data.get('copy_other', True)
+
+    if not source_story_id or not new_name:
+        emit('error', {"message": "Source story and new story name are required"})
         return
-    
+
     if not model_name:
         emit('error', {"message": "Model name is required"})
         return
-    
-    # Check if new story name already exists
-    if new_story_name in listStoryNames():
-        emit('error', {"message": f"Story '{new_story_name}' already exists"})
-        return
-    
-    # Copy the story
-    if copyStory(source_story_name, new_story_name, model_name, copy_all_history):
-        # Load story info to get system
-        story_info = loadStoryInfo(new_story_name)
+
+    new_story_id = copyStory(source_story_id, new_name, model_name, copy_pc, copy_plan, copy_summary, copy_history, copy_other)
+    if new_story_id:
+        story_info = loadStoryInfo(new_story_id)
         emit('story_copied', {
-            "story_name": new_story_name,
+            "id": new_story_id,
+            "name": new_name,
             "system": story_info.get('system', 'hp'),
             "model": model_name
         })
     else:
-        emit('error', {"message": f"Failed to copy story '{source_story_name}'"})
+        emit('error', {"message": f"Failed to copy story '{source_story_id}'"})
 
 @socket.on('summarize_history')
 def summarize_history():
@@ -122,12 +144,12 @@ def summarize_history():
     if narrator is None:
         emit('error', {"message": "No story selected"})
         return
-    story_name = narrator.story_name
-    logger.debug(f"summarizing story: '{story_name}' -- sending compaction message to model")
+    story_id = narrator.story_id
+    logger.debug(f"summarizing story: '{story_id}' -- sending compaction message to model")
     # Let the model write the summary / save any state it needs from the full conversation
     narrator.handleUserMessage({"message": "System: archive story state"})
-    if archiveHistory(story_name):
-        logger.debug(f"archived full history to previous/ for story: '{story_name}'")
+    if archiveHistory(story_id):
+        logger.debug(f"archived full history to previous/ for story: '{story_id}'")
         # Re-read the freshly-written summary into the prompt, then start fresh
         narrator.refreshSystemPrompt()
         logger.debug(f"refreshed system prompt from disk ({len(narrator.system_prompt)} chars), starting fresh conversation")
@@ -139,39 +161,31 @@ def summarize_history():
 @socket.on('delete_story')
 def delete_story(data: dict[str, str]):
     global narrator
-    story_name = data.get('story_name', '').strip()
-    if not story_name:
-        emit('error', {"message": "Story name is required"})
+    story_id = data.get('story_id', '').strip()
+    if not story_id:
+        emit('error', {"message": "Story id is required"})
         return
-    if archiveStoryDir(story_name):
+    if archiveStoryDir(story_id):
         # If the deleted story is currently loaded, clear the narrator
-        if narrator is not None and narrator.story_name == story_name:
+        if narrator is not None and narrator.story_id == story_id:
             narrator = None
-        logger.debug(f"archived (deleted) story: '{story_name}'")
-        emit('story_deleted', {"story_name": story_name})
+        logger.debug(f"archived (deleted) story: '{story_id}'")
+        emit('story_deleted', {"story_id": story_id})
     else:
-        emit('error', {"message": f"Story '{story_name}' not found"})
+        emit('error', {"message": f"Story '{story_id}' not found"})
 
 @socket.on('rename_story')
 def rename_story(data: dict[str, str]):
-    global narrator
-    old_name = data.get('old_name', '').strip()
+    story_id = data.get('story_id', '').strip()
     new_name = data.get('new_name', '').strip()
-    if not old_name or not new_name:
-        emit('error', {"message": "Old and new story names are required"})
+    if not story_id or not new_name:
+        emit('error', {"message": "Story id and new name are required"})
         return
-    if new_name == old_name:
-        return
-    if new_name in listStoryNames():
-        emit('error', {"message": f"Story '{new_name}' already exists"})
-        return
-    if renameStoryDir(old_name, new_name):
-        if narrator is not None and narrator.story_name == old_name:
-            narrator.story_name = new_name
-        logger.debug(f"renamed story '{old_name}' -> '{new_name}'")
-        emit('story_renamed', {"old_name": old_name, "new_name": new_name})
+    if renameStory(story_id, new_name):
+        logger.debug(f"renamed story '{story_id}' -> '{new_name}'")
+        emit('story_renamed', {"story_id": story_id, "new_name": new_name})
     else:
-        emit('error', {"message": f"Failed to rename story '{old_name}'"})
+        emit('error', {"message": f"Failed to rename story '{story_id}'"})
 
 @socket.on('get_system_instructions')
 def get_system_instructions():
@@ -197,7 +211,7 @@ def get_story_file(data: dict[str, str]):
     if not filename.endswith('.md') or '/' in filename or '\\' in filename:
         emit('error', {"message": "Invalid filename"})
         return
-    filepath = f"./stories/{narrator.story_name}/{filename}"
+    filepath = f"./stories/{narrator.story_id}/{filename}"
     if not os.path.exists(filepath):
         emit('error', {"message": f"File not found: {filename}"})
         return
@@ -220,7 +234,7 @@ def get_debug_messages():
 
     result = []
     # Previous (archived) conversations
-    previous = loadAllPreviousHistory(narrator.story_name)
+    previous = loadAllPreviousHistory(narrator.story_id)
     if previous:
         result.extend([truncate_system(m) for m in previous])
         result.append({"role": "_separator", "content": "Current Conversation"})
@@ -263,24 +277,26 @@ def switch_branch(data):
         narrator.switch_branch(turn_id, direction)
 
 def get_stories_with_info():
-    """Helper to load all stories with their info."""
+    """Helper to load all stories with their info. 'id' is the uuid directory, 'name' is the display name."""
     stories_with_info = []
-    for story_name in listStoryNames():
+    for story_id in listStoryIds():
         try:
-            story_info = loadStoryInfo(story_name)
+            story_info = loadStoryInfo(story_id)
             stories_with_info.append({
-                'name': story_name,
+                'id': story_id,
+                'name': story_info.get('story_name', story_id),
                 'system': story_info.get('system', 'unknown'),
                 'model': story_info.get('model', 'unknown')
             })
         except Exception as e:
             # If we can't load info, still show the story
             stories_with_info.append({
-                'name': story_name,
+                'id': story_id,
+                'name': story_id,
                 'system': 'unknown',
                 'model': 'unknown'
             })
-    return stories_with_info
+    return sorted(stories_with_info, key=lambda s: s['name'])
 
 @app.route('/')
 def index():
@@ -290,17 +306,17 @@ def index():
                            systems=listGameSystemNames(),
                            selected_story=None)
 
-@app.route('/stories/<story_name>')
-def story_page(story_name):
+@app.route('/stories/<story_id>')
+def story_page(story_id):
     # Check if story exists
-    if story_name not in listStoryNames():
+    if story_id not in listStoryIds():
         # Story doesn't exist, redirect to home
         return redirect(url_for('index'))
-    return render_template('index.html', 
-                           stories=get_stories_with_info(), 
-                           models=models, 
+    return render_template('index.html',
+                           stories=get_stories_with_info(),
+                           models=models,
                            systems=listGameSystemNames(),
-                           selected_story=story_name)
+                           selected_story=story_id)
 
 if __name__ == "__main__":
     socket.run(app, port=5001, debug=True, allow_unsafe_werkzeug=True)

@@ -37,6 +37,14 @@ export const debugModal = document.getElementById('debug-modal');
 export const debugModalBody = document.getElementById('debug-modal-body');
 export const debugModalClose = document.getElementById('debug-modal-close');
 
+// Settings modal elements
+export const settingsBtn = document.getElementById('settings-btn');
+export const settingsModal = document.getElementById('settings-modal');
+export const settingsModalClose = document.getElementById('settings-modal-close');
+export const cacheModeSelectCustom = document.getElementById('cache-mode-select-custom');
+export const cacheModeSelectDropdown = document.getElementById('cache-mode-select-dropdown');
+export const cacheModeSelect = document.getElementById('cache-mode-select');
+
 // Modal dropdown elements
 export const createSystemSelectCustom = document.getElementById('create-system-select-custom');
 export const createSystemSelectDropdown = document.getElementById('create-system-select-dropdown');
@@ -63,7 +71,11 @@ export const copyStoryModalClose = document.getElementById('copy-story-modal-clo
 export const copyStoryModalCancel = document.getElementById('copy-story-modal-cancel');
 export const copyStoryBtn = document.getElementById('copy-story-btn');
 export const copyStoryNameInput = document.getElementById('copy_story_name');
-export const copyAllHistoryCheckbox = document.getElementById('copy_all_history');
+export const copyPcCheckbox = document.getElementById('copy_pc');
+export const copyPlanCheckbox = document.getElementById('copy_plan');
+export const copySummaryCheckbox = document.getElementById('copy_summary');
+export const copyOtherCheckbox = document.getElementById('copy_other');
+export const copyHistoryCheckbox = document.getElementById('copy_history');
 export const copyStoryModelSelectCustom = document.getElementById('copy-story-model-select-custom');
 export const copyStoryModelSelectDropdown = document.getElementById('copy-story-model-select-dropdown');
 export const copyStoryModelSelect = document.getElementById('copy-story-model-select');

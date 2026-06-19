@@ -3,6 +3,8 @@ import {
     summarizeButton, summarizePopup, summarizePopupCancel, summarizePopupConfirm,
     costButton, costPopup, costTotalTokens, costAvgTokens, costTotalCost, costAvgCost, costLastTurn,
     themeToggleBtn,
+    settingsBtn, settingsModal, settingsModalClose, cacheModeSelect,
+    socket,
 } from './state.js';
 
 // Layout constants for popup positioning
@@ -171,21 +173,37 @@ export function hideSummarizePopup() {
     if (summarizePopup) summarizePopup.classList.remove('visible');
 }
 
+// Position a side popup next to an anchor element, clamped to the viewport.
+export function positionPopupNear(popup, anchorEl) {
+    popup.classList.add('show');
+    const a = anchorEl.getBoundingClientRect();
+    const p = popup.getBoundingClientRect();
+    const pad = 8;
+    let left = a.right + pad;
+    if (left + p.width > window.innerWidth - pad) left = a.left - p.width - pad;
+    if (left < pad) left = pad;
+    let top = a.top;
+    if (top + p.height > window.innerHeight - pad) top = window.innerHeight - p.height - pad;
+    if (top < pad) top = pad;
+    popup.style.left = left + 'px';
+    popup.style.top = top + 'px';
+}
+
 // Confirm popup
 let confirmCallback = null;
 
-export function showConfirmPopup(message, onConfirm) {
-    const overlay = document.getElementById('confirm-popup-overlay');
+export function showConfirmPopup(message, onConfirm, anchorEl) {
+    const popup = document.getElementById('confirm-popup');
     const msg = document.getElementById('confirm-popup-message');
-    if (!overlay || !msg) return;
+    if (!popup || !msg) return;
     msg.textContent = message;
     confirmCallback = onConfirm;
-    overlay.classList.add('show');
+    positionPopupNear(popup, anchorEl || document.body);
 }
 
 export function hideConfirmPopup() {
-    const overlay = document.getElementById('confirm-popup-overlay');
-    if (overlay) overlay.classList.remove('show');
+    const popup = document.getElementById('confirm-popup');
+    if (popup) popup.classList.remove('show');
     confirmCallback = null;
 }
 
@@ -196,6 +214,39 @@ export function initConfirmPopup() {
     if (confirmBtn) confirmBtn.addEventListener('click', () => {
         if (confirmCallback) confirmCallback();
         hideConfirmPopup();
+    });
+    document.addEventListener('click', function(e) {
+        const popup = document.getElementById('confirm-popup');
+        if (popup && popup.classList.contains('show') && !popup.contains(e.target)) hideConfirmPopup();
+    });
+}
+
+// Settings
+export function getCacheMode() {
+    return localStorage.getItem('cacheMode') || '1h';
+}
+
+export function initSettings() {
+    if (!settingsBtn || !settingsModal) return;
+
+    // Sync the dropdown to the saved value, then start listening for changes
+    if (cacheModeSelect) {
+        cacheModeSelect.value = getCacheMode();
+        cacheModeSelect.dispatchEvent(new Event('change'));  // update custom dropdown display
+        cacheModeSelect.addEventListener('change', () => {
+            localStorage.setItem('cacheMode', cacheModeSelect.value);
+            socket.emit('set_settings', { cache_mode: cacheModeSelect.value });
+        });
+    }
+
+    // Push the saved setting to the server now and on every (re)connect
+    socket.emit('set_settings', { cache_mode: getCacheMode() });
+    socket.on('connect', () => socket.emit('set_settings', { cache_mode: getCacheMode() }));
+
+    settingsBtn.addEventListener('click', () => settingsModal.classList.add('show'));
+    if (settingsModalClose) settingsModalClose.addEventListener('click', () => settingsModal.classList.remove('show'));
+    settingsModal.addEventListener('click', (e) => {
+        if (e.target === settingsModal) settingsModal.classList.remove('show');
     });
 }
 

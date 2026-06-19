@@ -7,13 +7,14 @@ import {
     selectStoryConfigModal, selectStoryConfigModalClose, selectStoryConfigModalCancel,
     selectStoryConfigBtn, selectStoryModelSelect, selectStorySystemSelect,
     copyStoryModal, copyStoryModalClose, copyStoryModalCancel,
-    copyStoryBtn, copyStoryNameInput, copyAllHistoryCheckbox, copyStoryModelSelect,
+    copyStoryBtn, copyStoryNameInput, copyStoryModelSelect,
+    copyPcCheckbox, copyPlanCheckbox, copySummaryCheckbox, copyOtherCheckbox, copyHistoryCheckbox,
     currentStory, setCurrentStory,
     pendingStoryName, setPendingStoryName,
     fileList, rightSidebar,
     fileViewerOverlay, fileViewerTitle, fileViewerBody, fileViewerToc, fileViewerClose,
 } from './state.js';
-import { showTypingIndicator, showConfirmPopup } from './ui.js';
+import { showTypingIndicator, showConfirmPopup, positionPopupNear } from './ui.js';
 
 export function addStoryFileToSidebar(filename) {
     if (!fileList || !filename) return;
@@ -44,13 +45,14 @@ function setHeaderIcon(system) {
 }
 
 // Select a story directly (when info.json exists)
-export function selectStoryDirectly(storyTitle) {
-    setCurrentStory(storyTitle);
-    socket.emit('select_story', { "selected_story": storyTitle });
+export function selectStoryDirectly(storyId) {
+    setCurrentStory(storyId);
+    socket.emit('select_story', { "selected_story": storyId });
+    const storyItem = storyList ? storyList.querySelector('.story-item[data-story="' + storyId + '"]') : null;
+    const displayName = storyItem ? storyItem.querySelector('.story-name').textContent : storyId;
     if (document.getElementById('current-story-title')) {
-        document.getElementById('current-story-title').textContent = storyTitle;
+        document.getElementById('current-story-title').textContent = displayName;
     }
-    const storyItem = storyList ? storyList.querySelector('.story-item[data-story="' + storyTitle + '"]') : null;
     const sidebarIcon = storyItem ? storyItem.querySelector('[title]') : null;
     const system = sidebarIcon ? sidebarIcon.getAttribute('title') : null;
     if (system) setHeaderIcon(system);
@@ -71,7 +73,7 @@ export function selectStoryDirectly(storyTitle) {
 export function addNewStory(story) {
     const li = document.createElement('li');
     li.className = 'story-item';
-    li.setAttribute('data-story', story.story_name || story.name);
+    li.setAttribute('data-story', story.id);
 
     let icon;
     const system = story.system || 'unknown';
@@ -93,7 +95,7 @@ export function addNewStory(story) {
     nameRow.className = 'story-name-row';
     const nameSpan = document.createElement('span');
     nameSpan.className = 'story-name';
-    nameSpan.textContent = story.story_name || story.name;
+    nameSpan.textContent = story.name;
     nameRow.appendChild(nameSpan);
     const metaSpan = document.createElement('span');
     metaSpan.className = 'story-meta';
@@ -101,16 +103,15 @@ export function addNewStory(story) {
     contentDiv.appendChild(nameRow);
     contentDiv.appendChild(metaSpan);
 
-    const storyName = story.story_name || story.name;
     const menuBtn = document.createElement('button');
     menuBtn.className = 'story-menu-btn';
-    menuBtn.dataset.story = storyName;
+    menuBtn.dataset.story = story.id;
     menuBtn.title = 'Story options';
     menuBtn.innerHTML = '<i class="fas fa-ellipsis-v"></i>';
 
     const contextMenu = document.createElement('div');
     contextMenu.className = 'story-context-menu';
-    contextMenu.dataset.story = storyName;
+    contextMenu.dataset.story = story.id;
     contextMenu.innerHTML = '<div class="context-menu-item" data-action="rename-story"><i class="fas fa-pen"></i><span>Rename Story</span></div><div class="context-menu-item" data-action="copy-story"><i class="fas fa-copy"></i><span>Copy Story</span></div><div class="context-menu-item delete" data-action="delete-story"><i class="fas fa-trash"></i><span>Delete Story</span></div>';
 
     li.appendChild(icon);
@@ -140,7 +141,8 @@ function startRename(nameSpan) {
         nameSpan.classList.remove('editing');
         const newName = nameSpan.textContent.trim();
         if (commit && newName && newName !== original) {
-            socket.emit('rename_story', { old_name: original, new_name: newName });
+            const storyId = nameSpan.closest('.story-item').dataset.story;
+            socket.emit('rename_story', { story_id: storyId, new_name: newName });
             nameSpan.textContent = newName; // optimistic; server confirms via story_renamed
         } else {
             nameSpan.textContent = original;
@@ -192,35 +194,37 @@ export function initStory() {
                 e.stopPropagation();
                 const storyItem = menuItem.closest('.story-item');
                 setPendingStoryName(storyItem.getAttribute('data-story'));
+                const displayName = storyItem.querySelector('.story-name').textContent;
                 menuItem.closest('.story-context-menu').classList.remove('show');
                 if (copyStoryModal) {
-                    if (copyStoryNameInput) copyStoryNameInput.value = pendingStoryName + ' (copy)';
-                    copyStoryModal.classList.add('show');
+                    if (copyStoryNameInput) copyStoryNameInput.value = displayName + ' (copy)';
+                    positionPopupNear(copyStoryModal, storyItem);
                 }
                 return;
             }
             if (menuItem && menuItem.dataset.action === 'delete-story') {
                 e.stopPropagation();
                 const storyItem = menuItem.closest('.story-item');
-                const storyName = storyItem.getAttribute('data-story');
+                const storyId = storyItem.getAttribute('data-story');
+                const displayName = storyItem.querySelector('.story-name').textContent;
                 menuItem.closest('.story-context-menu').classList.remove('show');
-                showConfirmPopup('Delete "' + storyName + '"? It will be moved to the archive.', () => {
-                    socket.emit('delete_story', { story_name: storyName });
-                });
+                showConfirmPopup('Delete "' + displayName + '"? It will be moved to the archive.', () => {
+                    socket.emit('delete_story', { story_id: storyId });
+                }, storyItem);
                 return;
             }
 
             let storyItem = e.target.closest('.story-item');
             if (storyItem) {
-                let storyTitle = storyItem.getAttribute('data-story');
+                let storyId = storyItem.getAttribute('data-story');
                 const modelSpan = storyItem.querySelector('.story-meta');
                 const model = modelSpan ? modelSpan.textContent.trim() : '';
 
                 if (model === 'unknown') {
-                    setPendingStoryName(storyTitle);
+                    setPendingStoryName(storyId);
                     if (selectStoryConfigModal) selectStoryConfigModal.classList.add('show');
                 } else {
-                    selectStoryDirectly(storyTitle);
+                    selectStoryDirectly(storyId);
                 }
             }
         });
@@ -256,8 +260,10 @@ export function initStory() {
                 "system_name": systemName
             });
 
-            if (document.getElementById('current-story-title')) {
-                document.getElementById('current-story-title').textContent = pendingStoryName;
+            const titleEl = document.getElementById('current-story-title');
+            if (titleEl) {
+                const item = storyList ? storyList.querySelector('.story-item[data-story="' + pendingStoryName + '"]') : null;
+                titleEl.textContent = item ? item.querySelector('.story-name').textContent : pendingStoryName;
             }
             const modelSubtext = document.getElementById('current-story-model');
             if (modelSubtext) {
@@ -318,8 +324,8 @@ export function initStory() {
     if (copyStoryModalClose) copyStoryModalClose.addEventListener('click', closeCopyStoryModal);
     if (copyStoryModalCancel) copyStoryModalCancel.addEventListener('click', closeCopyStoryModal);
     if (copyStoryModal) {
-        copyStoryModal.addEventListener('click', function(e) {
-            if (e.target === copyStoryModal) closeCopyStoryModal();
+        document.addEventListener('click', function(e) {
+            if (copyStoryModal.classList.contains('show') && !copyStoryModal.contains(e.target)) closeCopyStoryModal();
         });
     }
     if (copyStoryBtn) {
@@ -327,12 +333,15 @@ export function initStory() {
             const newName = copyStoryNameInput ? copyStoryNameInput.value.trim() : '';
             if (!newName || !pendingStoryName) return;
             const modelName = copyStoryModelSelect ? copyStoryModelSelect.value : 'openai/gpt-5.2';
-            const copyAll = copyAllHistoryCheckbox ? copyAllHistoryCheckbox.checked : false;
             socket.emit('copy_story', {
                 source_story: pendingStoryName,
                 new_story_name: newName,
                 model_name: modelName,
-                copy_all_history: copyAll,
+                copy_pc: copyPcCheckbox ? copyPcCheckbox.checked : true,
+                copy_plan: copyPlanCheckbox ? copyPlanCheckbox.checked : true,
+                copy_summary: copySummaryCheckbox ? copySummaryCheckbox.checked : true,
+                copy_other: copyOtherCheckbox ? copyOtherCheckbox.checked : true,
+                copy_history: copyHistoryCheckbox ? copyHistoryCheckbox.checked : true,
             });
             closeCopyStoryModal();
         });
@@ -342,12 +351,12 @@ export function initStory() {
     socket.on('story_created', function(data) { addNewStory(data); });
 
     socket.on('story_deleted', function(data) {
-        const storyName = data.story_name;
+        const storyId = data.story_id;
         if (storyList) {
-            const item = storyList.querySelector('.story-item[data-story="' + storyName + '"]');
+            const item = storyList.querySelector('.story-item[data-story="' + storyId + '"]');
             if (item) item.remove();
         }
-        if (currentStory === storyName) {
+        if (currentStory === storyId) {
             setCurrentStory(null);
             if (chatHistory) chatHistory.innerHTML = '';
             if (welcomeWrapper) welcomeWrapper.style.display = '';
@@ -360,21 +369,13 @@ export function initStory() {
     socket.on('story_copied', function(data) { addNewStory(data); });
 
     socket.on('story_renamed', function(data) {
-        const { old_name, new_name } = data;
+        const { story_id, new_name } = data;
         if (storyList) {
-            const item = storyList.querySelector('.story-item[data-story="' + old_name + '"]');
-            if (item) {
-                item.setAttribute('data-story', new_name);
-                const nameSpan = item.querySelector('.story-name');
-                if (nameSpan) nameSpan.textContent = new_name;
-                const menuBtn = item.querySelector('.story-menu-btn');
-                if (menuBtn) menuBtn.dataset.story = new_name;
-                const ctxMenu = item.querySelector('.story-context-menu');
-                if (ctxMenu) ctxMenu.dataset.story = new_name;
-            }
+            const item = storyList.querySelector('.story-item[data-story="' + story_id + '"]');
+            const nameSpan = item ? item.querySelector('.story-name') : null;
+            if (nameSpan) nameSpan.textContent = new_name;
         }
-        if (currentStory === old_name) {
-            setCurrentStory(new_name);
+        if (currentStory === story_id) {
             const titleEl = document.getElementById('current-story-title');
             if (titleEl) titleEl.textContent = new_name;
         }

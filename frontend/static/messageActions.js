@@ -13,14 +13,15 @@ export function addRetryButton(messageElement) {
     retryButton.className = 'retry-button';
     retryButton.innerHTML = '<i class="fas fa-redo"></i>';
     retryButton.title = 'Regenerate this response';
-    retryButton.addEventListener('click', function() {
-        handleRetryResponse(messageElement);
+    retryButton.addEventListener('click', function(e) {
+        e.stopPropagation();
+        handleRetryResponse(messageElement, retryButton);
     });
     retryContainer.appendChild(retryButton);
     messageElement.appendChild(retryContainer);
 }
 
-function handleRetryResponse(messageElement) {
+function handleRetryResponse(messageElement, anchorEl) {
     if (userInput && userInput.disabled) return;
 
     const wrapper = messageElement.closest('.assistant-turn-wrapper');
@@ -41,7 +42,7 @@ function handleRetryResponse(messageElement) {
         setAccumulatedContent('');
         showTypingIndicator();
         socket.emit('retry_response', { turn_id: turnId });
-    });
+    }, anchorEl);
 }
 
 export function addEditButton(userMessageContainer) {

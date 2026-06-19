@@ -7,7 +7,7 @@ import {
     accumulatedContent, setAccumulatedContent,
     setIsToolCallInProgress, setIsThinkingInProgress,
 } from './state.js';
-import { scrollToBottom, scrollToBottomIfStuck, hideTypingIndicator, updateCostDisplay } from './ui.js';
+import { scrollToBottom, scrollToBottomIfStuck, showTypingIndicator, hideTypingIndicator, updateCostDisplay } from './ui.js';
 import {
     ensureLiveWrapper, ensureRow, appendReasoning, appendTool, appendDice, closeRows,
 } from './reasoningRow.js';
@@ -211,6 +211,8 @@ export function initChat() {
             e.preventDefault();
             const message = userInput.value.trim();
             if (message) {
+                const startPrompt = chatHistory.querySelector('.start-story-prompt');
+                if (startPrompt) startPrompt.remove();
                 socket.emit('user_message', { message });
                 userInput.value = '';
                 const msgContainer = addUserMessage(message);
@@ -250,6 +252,23 @@ export function initChat() {
 
     socket.on('assistant_ready', function() {
         hideTypingIndicator();
+    });
+
+    socket.on('story_empty', function() {
+        const prompt = document.createElement('div');
+        prompt.className = 'start-story-prompt';
+        prompt.innerHTML = '<p>This story hasn\'t begun yet.</p>';
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-primary start-story-btn';
+        btn.innerHTML = '<i class="fas fa-feather-alt"></i> Start Story';
+        btn.addEventListener('click', function() {
+            prompt.remove();
+            if (userInput) userInput.disabled = true;
+            showTypingIndicator();
+            socket.emit('start_story');
+        });
+        prompt.appendChild(btn);
+        chatHistory.appendChild(prompt);
     });
 
     socket.on('history_summarized', function(data) {

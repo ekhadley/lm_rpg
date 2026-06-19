@@ -230,6 +230,30 @@ body {
     opacity: 0.9;
 }
 
+.sidebar-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.settings-btn {
+    background-color: transparent;
+    color: var(--text-muted);
+    border: none;
+    border-radius: 4px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.settings-btn:hover {
+    color: var(--text-bright);
+    background-color: var(--bg-alt);
+}
+
 .story-list {
     list-style: none;
     margin: 0;
@@ -1558,6 +1582,27 @@ body {
     75%  { content: ''; }
 }
 
+/* Start Story prompt - shown when a selected story has no history yet */
+.start-story-prompt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    margin: 4rem auto;
+    color: var(--text-muted);
+    font-family: var(--font-primary);
+    font-style: italic;
+}
+
+.start-story-btn {
+    font-size: 1rem;
+    padding: 10px 24px;
+}
+
+.start-story-btn i {
+    margin-right: 0.5rem;
+}
+
 /* History Separator - divides previous and current conversations */
 .history-separator {
     display: flex;
@@ -2115,12 +2160,13 @@ html, body {
 }
 
 .story-item:hover .story-menu-btn {
-    opacity: 1;
+    opacity: 0.6;
 }
 
-.story-menu-btn:hover {
+.story-item .story-menu-btn:hover {
+    opacity: 1;
     background-color: transparent !important;
-    color: var(--text-normal);
+    color: var(--text-bright);
 }
 
 .story-menu-btn:active {
@@ -2200,20 +2246,104 @@ html, body {
     opacity: 1;
 }
 
-.modal-content {
+/* Side popup (non-modal, anchored next to its trigger) */
+.side-popup {
+    position: fixed;
+    z-index: 2000;
+    display: none;
+    flex-direction: column;
+    width: 336px;
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.side-popup.show {
+    display: flex;
+}
+
+.side-popup .modal-header { padding: 10px 14px; }
+.side-popup .modal-header h5 { font-size: 1rem; }
+.side-popup .modal-body { padding: 14px; }
+.side-popup .form-group { margin-bottom: 14px; }
+.side-popup .form-group label { margin-bottom: 6px; }
+.side-popup .modal-footer { padding: 10px 14px 14px; gap: 8px; justify-content: center; }
+.side-popup .modal-footer .btn {
+    padding: 6px 18px;
+    font-size: 0.82rem;
+    border-radius: 5px;
+}
+.side-popup .modal-footer .btn-secondary {
+    background-color: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+}
+.side-popup .modal-footer .btn-secondary:hover {
+    background-color: var(--bg-alt);
+    color: var(--text-normal);
+}
+
+/* Custom checkbox */
+.form-group .custom-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--text-normal);
+    margin: 0 0 6px;
+}
+
+.form-group .custom-checkbox:last-child { margin-bottom: 0; }
+
+.custom-checkbox input { display: none; }
+
+.custom-checkbox .checkmark {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--msg-user);
+    position: relative;
+    transition: all 0.15s ease;
+}
+
+.custom-checkbox input:checked + .checkmark {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.custom-checkbox input:checked + .checkmark::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 1px;
+    width: 4px;
+    height: 9px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+/* Scoped under .modal-overlay to outrank Bootstrap's .modal-content/.modal-header/etc.
+   (loaded after this file), whose unresolvable --bs-modal-* vars reset background/padding/border. */
+.modal-overlay .modal-content {
     background: var(--bg-deep);
     border: 1px solid var(--border);
     border-radius: 8px;
     width: 90%;
     max-width: 500px;
     max-height: 90vh;
-    overflow-y: auto;
+    overflow: visible; /* let custom-select dropdowns hang past the modal edge instead of creating a scrollbar */
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     display: flex;
     flex-direction: column;
 }
 
-.modal-header {
+.modal-overlay .modal-header {
     padding: 16px 20px;
     border-bottom: 1px solid var(--border);
     display: flex;
@@ -2241,7 +2371,7 @@ html, body {
     color: var(--text-bright);
 }
 
-.modal-body {
+.modal-overlay .modal-body {
     padding: 20px;
     flex: 1;
 }
@@ -2277,7 +2407,7 @@ html, body {
     border-color: var(--accent);
 }
 
-.modal-footer {
+.modal-overlay .modal-footer {
     padding: 16px 20px;
     border-top: 1px solid var(--border);
     display: flex;
@@ -2340,16 +2470,10 @@ html, body {
 }
 
 /* Confirm Popup */
-.confirm-popup-content {
-    background: var(--bg-deep);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-}
+.side-popup.confirm-popup { width: 300px; }
 
 .confirm-popup-body {
-    padding: 20px;
-    text-align: center;
+    padding: 14px;
 }
 
 .confirm-popup-body p {
@@ -2360,10 +2484,10 @@ html, body {
 }
 
 .confirm-popup-footer {
-    padding: 0 20px 20px;
+    padding: 0 14px 14px;
     display: flex;
-    justify-content: center;
-    gap: 10px;
+    justify-content: flex-end;
+    gap: 8px;
 }
 
 .confirm-popup-footer .btn-secondary {
@@ -2488,13 +2612,14 @@ html, body {
     font-size: 0.7rem;
     flex-shrink: 0;
     font-family: 'Consolas', 'Monaco', monospace;
+    color: var(--text-muted);
 }
 
-.debug-cache.cache-hit {
+.debug-cache .cache-hit {
     color: #7cc87c;
 }
 
-.debug-cache.cache-write {
+.debug-cache .cache-write {
     color: #c8a87c;
 }
 

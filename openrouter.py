@@ -14,6 +14,12 @@ from callbacks import CallbackHandler
 
 from utils import logger
 
+CACHE_CONTROLS = {
+    "none": None,
+    "5m": {"type": "ephemeral"},
+    "1h": {"type": "ephemeral", "ttl": "1h"},
+}
+
 class OpenRouterStream:
     """
     Streams responses from OpenRouter. Iteration over the object yields only valid json.
@@ -38,11 +44,14 @@ class OpenRouterStream:
                 "model": model_name,
                 "messages": messages,
                 "tools": tools,
+                "max_tokens": 64000,
+                # Opus 4.8 uses adaptive thinking: reasoning.effort/max_tokens are ignored, so just toggle thinking on.
                 "reasoning": {
                     "enabled": thinking_enabled,
-                    "effort": thinking_effort if thinking_enabled else None,
                     "exclude": False,
                 },
+                # Effort level (low/medium/high/xhigh/max) is controlled via verbosity, which maps to Anthropic's output_config.effort.
+                "verbosity": thinking_effort if thinking_enabled else None,
                 "stream": True
             },
             stream = True
@@ -186,10 +195,12 @@ class OpenRouterProvider():
             system_prompt: str,
             callback_handler: CallbackHandler,
             thinking_effort: str = "high",
+            cache_mode: str = "1h",
             key: str|None = os.getenv("OPENROUTER_API_KEY"),
         ):
         assert key is not None, "OPENROUTER_API_KEY is not set"
         self.key: str = key
+        self.cache_mode: str = cache_mode
         self.model_name: str = model_name
         self.tb: Toolbox = toolbox
         self.tool_schemas = self.tb.getToolSchemas()
@@ -234,15 +245,14 @@ class OpenRouterProvider():
             "last_turn_cost": self.last_turn_cost
         }
 
+    def cacheControl(self) -> dict | None:
+        return CACHE_CONTROLS[self.cache_mode]
+
     def addSystemMessage(self, content: str) -> None:
-        self.messages.insert(0, {
-            "role": "system",
-            "content": [{
-                "type": "text",
-                "text": content,
-                "cache_control": {"type": "ephemeral"}
-            }],
-        })
+        block = {"type": "text", "text": content}
+        if self.cacheControl():
+            block["cache_control"] = self.cacheControl()
+        self.messages.insert(0, {"role": "system", "content": [block]})
     def addUserMessage(self, content: str) -> None:
         self.messages.append({
             "role": "user",
@@ -280,15 +290,16 @@ class OpenRouterProvider():
         sliding one on the final message so the whole conversation prefix (not just the
         system prompt) is read from cache on the next turn. Up to 4 breakpoints are allowed.
         """
-        if not messages:
+        cc = self.cacheControl()
+        if not messages or cc is None:
             return messages
         msgs = list(messages)
         last = copy.deepcopy(msgs[-1])
         content = last.get("content")
         if isinstance(content, str) and content:
-            last["content"] = [{"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}]
+            last["content"] = [{"type": "text", "text": content, "cache_control": cc}]
         elif isinstance(content, list) and content:
-            last["content"][-1] = {**last["content"][-1], "cache_control": {"type": "ephemeral"}}
+            last["content"][-1] = {**last["content"][-1], "cache_control": cc}
         else:
             return messages  # nothing to anchor on; rely on the system-prompt cache only
         msgs[-1] = last

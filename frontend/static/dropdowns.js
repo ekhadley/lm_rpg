@@ -4,6 +4,7 @@ import {
     selectStorySystemSelectCustom, selectStorySystemSelectDropdown, selectStorySystemSelect,
     selectStoryModelSelectCustom, selectStoryModelSelectDropdown, selectStoryModelSelect,
     copyStoryModelSelectCustom, copyStoryModelSelectDropdown, copyStoryModelSelect,
+    cacheModeSelectCustom, cacheModeSelectDropdown, cacheModeSelect,
 } from './state.js';
 
 export function initCustomDropdown(customSelect, dropdown, nativeSelect, selectType) {
@@ -120,5 +121,8 @@ export function initAllDropdowns() {
     }
     if (copyStoryModelSelectCustom && copyStoryModelSelectDropdown && copyStoryModelSelect) {
         initCustomDropdown(copyStoryModelSelectCustom, copyStoryModelSelectDropdown, copyStoryModelSelect, 'model');
+    }
+    if (cacheModeSelectCustom && cacheModeSelectDropdown && cacheModeSelect) {
+        initCustomDropdown(cacheModeSelectCustom, cacheModeSelectDropdown, cacheModeSelect, 'cache');
     }
 }
