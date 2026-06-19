@@ -2,8 +2,6 @@ import {
     socket, chatHistory, userInput, messageForm,
     conversationHistory, setConversationHistory,
     currentNarratorMessageElement, setCurrentNarratorMessageElement,
-    setCurrentThinkingElement,
-    setLastNarratorMessageElement,
     accumulatedContent, setAccumulatedContent,
     setIsToolCallInProgress, setIsThinkingInProgress,
 } from './state.js';
@@ -129,10 +127,8 @@ function renderHistoryMessages(messages, addRetry = false) {
     while (i < messages.length) {
         const m = messages[i];
         if (m.type === 'user') {
-            if (m.content != "<|begin_conversation|>") {
-                const container = addUserMessage(m.content, false);
-                if (addRetry && container) addEditButton(container);
-            }
+            const container = addUserMessage(m.content, false);
+            if (addRetry && container) addEditButton(container);
             i++;
         } else {
             const group = [];
@@ -289,7 +285,6 @@ export function initChat() {
             }
             setConversationHistory([]);
             setCurrentNarratorMessageElement(null);
-            setLastNarratorMessageElement(null);
             setAccumulatedContent('');
             if (userInput) { userInput.disabled = false; userInput.focus(); }
         }
@@ -383,13 +378,11 @@ export function initChat() {
             const hist = [...conversationHistory];
             hist.push({ role: 'assistant', content: accumulatedContent, timestamp: new Date().toISOString() });
             setConversationHistory(hist);
-            setLastNarratorMessageElement(currentNarratorMessageElement);
         }
         const w = chatHistory.querySelector('.assistant-turn-wrapper.in-progress');
         if (w) { closeRows(w); w.classList.remove('in-progress'); }
 
         setCurrentNarratorMessageElement(null);
-        setCurrentThinkingElement(null);
         setAccumulatedContent('');
         setIsToolCallInProgress(false);
         setIsThinkingInProgress(false);

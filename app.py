@@ -149,10 +149,8 @@ def summarize_history():
     # Let the model write the summary / save any state it needs from the full conversation
     narrator.handleUserMessage({"message": "System: archive story state"})
     if archiveHistory(story_id):
-        logger.debug(f"archived full history to previous/ for story: '{story_id}'")
-        # Re-read the freshly-written summary into the prompt, then start fresh
-        narrator.refreshSystemPrompt()
-        logger.debug(f"refreshed system prompt from disk ({len(narrator.system_prompt)} chars), starting fresh conversation")
+        logger.debug(f"archived full history to previous/ for story: '{story_id}', starting fresh conversation")
+        # clearMessages rebuilds context, which live-reads the freshly-written summary into the system prompt
         narrator.clearMessages()
         emit('history_summarized', {"success": True})
     else:

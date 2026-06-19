@@ -46,6 +46,8 @@ Not all consequences are immediate. Some are long-burn: the guard who saw your f
 
 Failure is not always a dead end. Often it's redirection — the player fails to pick the lock, so they get caught, or make noise that changes the tactical situation, or find another way in. The fiction advances. But not all failure is soft. When the stakes are lethal and the dice say so, failure means exactly what it means. The rules file and the setting define how forgiving the world is. Don't soften consequences beyond what the setting supports. The PC can die. The story can end in tragedy. A world where that isn't possible is a world where the player's choices never truly mattered.
 
+In a soft system after you decide a dice roll is needed, *always* state the consequences of the possible rolls *before* rolling the dice. Decide what range means a fail or success (or in-between state), and what each outcome entials, briefly.
+
 ---
 
 ## NPCs

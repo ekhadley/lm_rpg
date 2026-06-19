@@ -45,9 +45,8 @@ function handleRetryResponse(messageElement, anchorEl) {
     }, anchorEl);
 }
 
-export function addEditButton(userMessageContainer) {
-    const userMsg = userMessageContainer.querySelector('.user-message');
-    if (!userMsg || userMsg.querySelector('.edit-button')) return;
+// Build the inline edit affordance (pencil button) for a user message.
+function makeEditAffordance(userMessageContainer) {
     const actions = document.createElement('div');
     actions.className = 'message-actions';
     const btn = document.createElement('button');
@@ -56,7 +55,22 @@ export function addEditButton(userMessageContainer) {
     btn.title = 'Edit this message';
     btn.addEventListener('click', () => startEditing(userMessageContainer));
     actions.appendChild(btn);
-    userMsg.appendChild(actions);
+    return actions;
+}
+
+// Reset an editing message back to plain text with its edit button.
+function restoreUserMessage(userMessageContainer, text) {
+    const userMsg = userMessageContainer.querySelector('.user-message');
+    userMsg.classList.remove('editing');
+    userMsg.innerHTML = '';
+    userMsg.textContent = text;
+    userMsg.appendChild(makeEditAffordance(userMessageContainer));
+}
+
+export function addEditButton(userMessageContainer) {
+    const userMsg = userMessageContainer.querySelector('.user-message');
+    if (!userMsg || userMsg.querySelector('.edit-button')) return;
+    userMsg.appendChild(makeEditAffordance(userMessageContainer));
 }
 
 function startEditing(userMessageContainer) {
@@ -88,35 +102,13 @@ function startEditing(userMessageContainer) {
     textarea.setSelectionRange(textarea.value.length, textarea.value.length);
 
     function cancel() {
-        userMsg.classList.remove('editing');
-        userMsg.innerHTML = '';
-        userMsg.textContent = originalText;
-        const actions = document.createElement('div');
-        actions.className = 'message-actions';
-        const btn = document.createElement('button');
-        btn.className = 'edit-button';
-        btn.innerHTML = '<i class="fas fa-pencil"></i>';
-        btn.title = 'Edit this message';
-        btn.addEventListener('click', () => startEditing(userMessageContainer));
-        actions.appendChild(btn);
-        userMsg.appendChild(actions);
+        restoreUserMessage(userMessageContainer, originalText);
     }
 
     function save() {
         const newText = textarea.value.trim();
         if (!newText || newText === originalText) { cancel(); return; }
-        userMsg.classList.remove('editing');
-        userMsg.innerHTML = '';
-        userMsg.textContent = newText;
-        const actions = document.createElement('div');
-        actions.className = 'message-actions';
-        const btn = document.createElement('button');
-        btn.className = 'edit-button';
-        btn.innerHTML = '<i class="fas fa-pencil"></i>';
-        btn.title = 'Edit this message';
-        btn.addEventListener('click', () => startEditing(userMessageContainer));
-        actions.appendChild(btn);
-        userMsg.appendChild(actions);
+        restoreUserMessage(userMessageContainer, newText);
         handleEditMessage(userMessageContainer, newText);
     }
 

@@ -9,7 +9,6 @@ load_dotenv(override=True)
 
 from model_tools import Toolbox
 
-import callbacks
 from callbacks import CallbackHandler
 
 from utils import logger
@@ -192,7 +191,6 @@ class OpenRouterProvider():
             self,
             model_name: str,
             toolbox: Toolbox,
-            system_prompt: str,
             callback_handler: CallbackHandler,
             thinking_effort: str = "high",
             cache_mode: str = "1h",
@@ -204,7 +202,6 @@ class OpenRouterProvider():
         self.model_name: str = model_name
         self.tb: Toolbox = toolbox
         self.tool_schemas = self.tb.getToolSchemas()
-        self.system_prompt = system_prompt
         self.messages: list[dict] = []
         self.cb = callback_handler
         self.thinking_enabled = thinking_effort != "none"
@@ -213,8 +210,6 @@ class OpenRouterProvider():
         self.system_turn_entries: int = 0  # Number of usage entries from the initial system turn
         self.last_turn_cost: float = 0.0
 
-        self.addSystemMessage(system_prompt)
-    
     def getCostStats(self) -> dict:
         """Calculate cost statistics from usage history"""
         if not self.usage_history:
@@ -248,28 +243,11 @@ class OpenRouterProvider():
     def cacheControl(self) -> dict | None:
         return CACHE_CONTROLS[self.cache_mode]
 
-    def addSystemMessage(self, content: str) -> None:
-        block = {"type": "text", "text": content}
-        if self.cacheControl():
-            block["cache_control"] = self.cacheControl()
-        self.messages.insert(0, {"role": "system", "content": [block]})
     def addUserMessage(self, content: str) -> None:
         self.messages.append({
             "role": "user",
             "content": content,
         })
-    def addAssistantMessage(self, content) -> None:
-        self.messages.append({
-            "role": "assistant",
-            "content": content,
-        })
-    def saveMessages(self, path: str, **kwargs) -> None:
-        with open(path, "w+") as f:
-            json.dump({
-                "model_name": kwargs.get("model_name", self.model_name),
-                "system_name": kwargs.get("system_name", ""),
-                "messages": self.messages,
-            }, f, indent=4)
     def recompute_usage_from_messages(self, messages: list[dict]) -> None:
         """Rebuild usage_history (and the system-turn count) from a flat message list."""
         self.usage_history = []
@@ -332,9 +310,7 @@ class OpenRouterProvider():
     def _run(self) -> str | None:
         finish_reason = None
         while True:
-            currently_outputting_text = False
             pending_tool_calls = False
-            was_thinking = False
             stream = self.getStream()
 
             for event in stream:
@@ -367,11 +343,6 @@ class OpenRouterProvider():
                 delta_content = delta.get("content")
                 if delta_content:
                     self.messages[-1]["content"] += delta_content
-                    if not currently_outputting_text:
-                        if was_thinking:
-                            self.cb.think_end()
-                            was_thinking = False
-                        currently_outputting_text = True
                     self.cb.text_output(text=delta_content)
 
                 # Handle reasoning (supports multiple formats)
@@ -399,15 +370,11 @@ class OpenRouterProvider():
                     reasoning_delta = delta.get("reasoning")
 
                 if reasoning_delta:
-                    was_thinking = True
                     self.messages[-1]["reasoning"] += reasoning_delta
                     self.cb.think_output(text=reasoning_delta)
 
                 # Handle tool calls
                 tool_calls = delta.get("tool_calls", [])
-                if tool_calls and was_thinking:
-                    self.cb.think_end()
-                    was_thinking = False
                 for tool_call in tool_calls:
                     if "id" in tool_call:
                         if "tool_calls" not in self.messages[-1]:
@@ -419,7 +386,6 @@ class OpenRouterProvider():
                 # Handle finish reasons
                 finish_reason = event_item.get("finish_reason")
                 if finish_reason:
-                    currently_outputting_text = False
                     # Check for non-streamed reasoning in final message
                     final_reasoning = event_item.get("message", {}).get("reasoning") or delta.get("reasoning")
                     if final_reasoning and not self.messages[-1].get("reasoning"):
@@ -433,9 +399,6 @@ class OpenRouterProvider():
                     continue  # Continue to catch usage chunk
 
             stream.close()
-
-            if was_thinking:
-                self.cb.think_end()
 
             if not pending_tool_calls:
                 break

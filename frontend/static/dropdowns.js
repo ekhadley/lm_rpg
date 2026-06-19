@@ -7,7 +7,7 @@ import {
     cacheModeSelectCustom, cacheModeSelectDropdown, cacheModeSelect,
 } from './state.js';
 
-export function initCustomDropdown(customSelect, dropdown, nativeSelect, selectType) {
+export function initCustomDropdown(customSelect, dropdown, nativeSelect) {
     if (!customSelect || !dropdown || !nativeSelect) return;
 
     const valueSpan = customSelect.querySelector('.custom-select-value');
@@ -108,21 +108,21 @@ export function initCustomDropdown(customSelect, dropdown, nativeSelect, selectT
 
 export function initAllDropdowns() {
     if (createSystemSelectCustom && createSystemSelectDropdown && createSystemSelect) {
-        initCustomDropdown(createSystemSelectCustom, createSystemSelectDropdown, createSystemSelect, 'system');
+        initCustomDropdown(createSystemSelectCustom, createSystemSelectDropdown, createSystemSelect);
     }
     if (createModelSelectCustom && createModelSelectDropdown && createModelSelect) {
-        initCustomDropdown(createModelSelectCustom, createModelSelectDropdown, createModelSelect, 'model');
+        initCustomDropdown(createModelSelectCustom, createModelSelectDropdown, createModelSelect);
     }
     if (selectStorySystemSelectCustom && selectStorySystemSelectDropdown && selectStorySystemSelect) {
-        initCustomDropdown(selectStorySystemSelectCustom, selectStorySystemSelectDropdown, selectStorySystemSelect, 'system');
+        initCustomDropdown(selectStorySystemSelectCustom, selectStorySystemSelectDropdown, selectStorySystemSelect);
     }
     if (selectStoryModelSelectCustom && selectStoryModelSelectDropdown && selectStoryModelSelect) {
-        initCustomDropdown(selectStoryModelSelectCustom, selectStoryModelSelectDropdown, selectStoryModelSelect, 'model');
+        initCustomDropdown(selectStoryModelSelectCustom, selectStoryModelSelectDropdown, selectStoryModelSelect);
     }
     if (copyStoryModelSelectCustom && copyStoryModelSelectDropdown && copyStoryModelSelect) {
-        initCustomDropdown(copyStoryModelSelectCustom, copyStoryModelSelectDropdown, copyStoryModelSelect, 'model');
+        initCustomDropdown(copyStoryModelSelectCustom, copyStoryModelSelectDropdown, copyStoryModelSelect);
     }
     if (cacheModeSelectCustom && cacheModeSelectDropdown && cacheModeSelect) {
-        initCustomDropdown(cacheModeSelectCustom, cacheModeSelectDropdown, cacheModeSelect, 'cache');
+        initCustomDropdown(cacheModeSelectCustom, cacheModeSelectDropdown, cacheModeSelect);
     }
 }

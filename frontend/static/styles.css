@@ -2407,6 +2407,11 @@ html, body {
     border-color: var(--accent);
 }
 
+.form-group .form-control.input-error,
+.form-group .form-control.input-error:focus {
+    border-color: var(--danger);
+}
+
 .modal-overlay .modal-footer {
     padding: 16px 20px;
     border-top: 1px solid var(--border);

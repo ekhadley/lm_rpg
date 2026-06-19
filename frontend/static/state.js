@@ -83,9 +83,7 @@ export const copyStoryModelSelect = document.getElementById('copy-story-model-se
 // Shared mutable state
 export let conversationHistory = [];
 export let currentNarratorMessageElement = null;
-export let currentThinkingElement = null;
 export let currentStory = null;
-export let lastNarratorMessageElement = null;
 export let accumulatedContent = '';
 export let pendingStoryName = null;
 
@@ -96,9 +94,7 @@ export let isThinkingInProgress = false;
 // State setters (needed because ES module exports are live bindings but not assignable from outside)
 export function setConversationHistory(v) { conversationHistory = v; }
 export function setCurrentNarratorMessageElement(v) { currentNarratorMessageElement = v; }
-export function setCurrentThinkingElement(v) { currentThinkingElement = v; }
 export function setCurrentStory(v) { currentStory = v; }
-export function setLastNarratorMessageElement(v) { lastNarratorMessageElement = v; }
 export function setAccumulatedContent(v) { accumulatedContent = v; }
 export function setPendingStoryName(v) { pendingStoryName = v; }
 export function setIsToolCallInProgress(v) { isToolCallInProgress = v; }

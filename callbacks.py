@@ -6,8 +6,6 @@ class CallbackHandler:
         pass
     def think_output(self, text):
         pass
-    def think_end(self):
-        pass
     def tool_request(self, name:str, inputs: dict):
         pass
     def tool_submit(self, names: list[str], inputs: list[dict], results: list[str]):
@@ -21,23 +19,27 @@ class WebCallbackHandler(CallbackHandler):
         self.outputting_text = False
         self.thinking = False
 
+    # Emit think_end when reasoning gives way to text, a tool call, or turn end.
+    def _end_thinking(self):
+        if self.thinking:
+            self.thinking = False
+            self.socket.emit('think_end')
+
     def think_output(self, text):
         if not self.thinking:
             self.thinking = True
             self.socket.emit('think_start')
         self.emit('think_output', text=text)
-    
-    def think_end(self):
-        self.thinking = False
-        self.socket.emit('think_end')
 
     def text_output(self, text):
+        self._end_thinking()
         if not self.outputting_text:
             self.outputting_text = True
             self.socket.emit('text_start')
         self.emit('text_output', text=text)
 
     def tool_request(self, name:str, inputs: dict):
+        self._end_thinking()
         self.outputting_text = False
         self.emit('tool_request', name=name, inputs=inputs)
 
@@ -46,8 +48,8 @@ class WebCallbackHandler(CallbackHandler):
         self.emit('tool_submit', tools=[{"name": names[i], "inputs": inputs[i], "result": results[i]} for i in range(len(names))])
 
     def turn_end(self, cost_stats: dict = None, finish_reason: str = None):
+        self._end_thinking()
         self.outputting_text = False
-        self.thinking = False  # Reset for next turn so think_start is emitted properly
         if finish_reason:
             logger.debug(f"Turn ended with finish_reason: {finish_reason}")
         self.emit('turn_end', cost_stats=cost_stats)

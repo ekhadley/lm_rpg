@@ -21,7 +21,6 @@ class Narrator:
 
         self.provider = OpenRouterProvider(
             model_name=model_name,
-            system_prompt=self.system_prompt,
             thinking_effort=self.thinking_effort,
             cache_mode=cache_mode,
             toolbox=self.tb,
@@ -29,6 +28,8 @@ class Narrator:
         )
 
     def _systemMessage(self) -> dict:
+        # Re-read instruction/story files live so mid-conversation edits take effect on the next turn (incl. retry/edit).
+        self.system_prompt = getFullStoryInstruction(self.system_name, self.story_id)
         block = {"type": "text", "text": self.system_prompt}
         if self.provider.cacheControl():
             block["cache_control"] = self.provider.cacheControl()
@@ -60,10 +61,6 @@ class Narrator:
             return None
         self._rebuildContext()
         return self.tree
-
-    def refreshSystemPrompt(self):
-        """Re-read story files (including a freshly-written summary) into the system prompt."""
-        self.system_prompt = getFullStoryInstruction(self.system_name, self.story_id)
 
     def clearMessages(self):
         """Reset to an empty tree. Used after summarization."""
@@ -102,6 +99,7 @@ class Narrator:
 
     def startStory(self):
         """Kick off a brand-new story (triggered by the frontend's Start Story button)."""
+        self._rebuildContext()  # seed [system]; the provider no longer holds a system message of its own
         self.provider.addUserMessage("System: start of story")
         self._runIntoTurn(None)
         self._rebuildContext()
@@ -197,6 +195,7 @@ class Narrator:
 
     def handleUserMessage(self, data: dict[str, str]) -> None:
         parent = self.tree.current_leaf
+        self._rebuildContext()  # rebuild [system] + active branch before appending the new user turn
         self.provider.addUserMessage(data['message'])
         self._runIntoTurn(parent)
         self._rebuildContext()

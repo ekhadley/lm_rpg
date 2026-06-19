@@ -44,29 +44,33 @@ function setHeaderIcon(system) {
     icon.style.display = '';
 }
 
-// Select a story directly (when info.json exists)
-export function selectStoryDirectly(storyId) {
+// Switch the UI into the chat view for a selected story (title, icon, model, panels).
+function enterStoryView({ storyId, displayName, model, system }) {
     setCurrentStory(storyId);
-    socket.emit('select_story', { "selected_story": storyId });
-    const storyItem = storyList ? storyList.querySelector('.story-item[data-story="' + storyId + '"]') : null;
-    const displayName = storyItem ? storyItem.querySelector('.story-name').textContent : storyId;
-    if (document.getElementById('current-story-title')) {
-        document.getElementById('current-story-title').textContent = displayName;
-    }
-    const sidebarIcon = storyItem ? storyItem.querySelector('[title]') : null;
-    const system = sidebarIcon ? sidebarIcon.getAttribute('title') : null;
+    const titleEl = document.getElementById('current-story-title');
+    if (titleEl) titleEl.textContent = displayName;
     if (system) setHeaderIcon(system);
-    const modelText = storyItem ? storyItem.querySelector('.story-meta').textContent.trim() : '';
     const modelSubtext = document.getElementById('current-story-model');
     if (modelSubtext) {
-        modelSubtext.textContent = stripProvider(modelText);
-        modelSubtext.style.display = modelText ? '' : 'none';
+        modelSubtext.textContent = stripProvider(model);
+        modelSubtext.style.display = model ? '' : 'none';
     }
     if (chatHistory) chatHistory.innerHTML = '';
     if (welcomeWrapper) welcomeWrapper.style.display = 'none';
     if (chatHeader) chatHeader.style.display = 'flex';
     if (rightSidebar) rightSidebar.classList.add('visible');
     showTypingIndicator();
+}
+
+// Select a story directly (when info.json exists)
+export function selectStoryDirectly(storyId) {
+    socket.emit('select_story', { "selected_story": storyId });
+    const storyItem = storyList ? storyList.querySelector('.story-item[data-story="' + storyId + '"]') : null;
+    const displayName = storyItem ? storyItem.querySelector('.story-name').textContent : storyId;
+    const sidebarIcon = storyItem ? storyItem.querySelector('[title]') : null;
+    const system = sidebarIcon ? sidebarIcon.getAttribute('title') : null;
+    const modelText = storyItem ? storyItem.querySelector('.story-meta').textContent.trim() : '';
+    enterStoryView({ storyId, displayName, model: modelText, system });
 }
 
 // Add a new story to the sidebar list
@@ -238,8 +242,8 @@ export function initStory() {
     if (selectStoryConfigBtn) {
         selectStoryConfigBtn.addEventListener('click', function() {
             if (!pendingStoryName) return;
-            const modelName = selectStoryModelSelect ? selectStoryModelSelect.value : 'openai/gpt-5.2';
-            const systemName = selectStorySystemSelect ? selectStorySystemSelect.value : 'hp';
+            const modelName = selectStoryModelSelect.value;
+            const systemName = selectStorySystemSelect.value;
 
             if (storyList) {
                 storyList.querySelectorAll('.story-item').forEach(item => {
@@ -251,8 +255,6 @@ export function initStory() {
             }
 
             if (selectStoryConfigModal) selectStoryConfigModal.classList.remove('show');
-            setCurrentStory(pendingStoryName);
-            setHeaderIcon(systemName);
 
             socket.emit('select_story', {
                 "selected_story": pendingStoryName,
@@ -260,21 +262,9 @@ export function initStory() {
                 "system_name": systemName
             });
 
-            const titleEl = document.getElementById('current-story-title');
-            if (titleEl) {
-                const item = storyList ? storyList.querySelector('.story-item[data-story="' + pendingStoryName + '"]') : null;
-                titleEl.textContent = item ? item.querySelector('.story-name').textContent : pendingStoryName;
-            }
-            const modelSubtext = document.getElementById('current-story-model');
-            if (modelSubtext) {
-                modelSubtext.textContent = stripProvider(modelName);
-                modelSubtext.style.display = modelName ? '' : 'none';
-            }
-            if (chatHistory) chatHistory.innerHTML = '';
-            if (welcomeWrapper) welcomeWrapper.style.display = 'none';
-            if (chatHeader) chatHeader.style.display = 'flex';
-            if (rightSidebar) rightSidebar.classList.add('visible');
-            showTypingIndicator();
+            const item = storyList ? storyList.querySelector('.story-item[data-story="' + pendingStoryName + '"]') : null;
+            const displayName = item ? item.querySelector('.story-name').textContent : pendingStoryName;
+            enterStoryView({ storyId: pendingStoryName, displayName, model: modelName, system: systemName });
             setPendingStoryName(null);
         });
     }
@@ -305,10 +295,16 @@ export function initStory() {
     // Create story
     if (createStoryBtn) {
         createStoryBtn.addEventListener('click', function() {
-            const newStoryName = document.getElementById('new_story_name').value.trim();
-            if (!newStoryName) { alert('Please enter a story name'); return; }
-            const modelName = createModelSelect ? createModelSelect.value : 'openai/gpt-5.2';
-            const systemName = createSystemSelect ? createSystemSelect.value : 'hp';
+            const nameInput = document.getElementById('new_story_name');
+            const newStoryName = nameInput.value.trim();
+            if (!newStoryName) {
+                nameInput.classList.add('input-error');
+                nameInput.addEventListener('input', () => nameInput.classList.remove('input-error'), { once: true });
+                nameInput.focus();
+                return;
+            }
+            const modelName = createModelSelect.value;
+            const systemName = createSystemSelect.value;
             socket.emit('create_story', { story_name: newStoryName, model_name: modelName, system_name: systemName });
             if (createStoryModal) createStoryModal.classList.remove('show');
             const newStoryInput = document.getElementById('new_story_name');
@@ -332,7 +328,7 @@ export function initStory() {
         copyStoryBtn.addEventListener('click', function() {
             const newName = copyStoryNameInput ? copyStoryNameInput.value.trim() : '';
             if (!newName || !pendingStoryName) return;
-            const modelName = copyStoryModelSelect ? copyStoryModelSelect.value : 'openai/gpt-5.2';
+            const modelName = copyStoryModelSelect.value;
             socket.emit('copy_story', {
                 source_story: pendingStoryName,
                 new_story_name: newName,
