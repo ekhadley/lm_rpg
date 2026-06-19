@@ -9,7 +9,7 @@ import { scrollToBottom, scrollToBottomIfStuck, showTypingIndicator, hideTypingI
 import {
     ensureLiveWrapper, ensureRow, appendReasoning, appendTool, appendDice, closeRows,
 } from './reasoningRow.js';
-import { addRetryButton, addEditButton } from './messageActions.js';
+import { addRetryButton, addEditButton, addRollbackButton } from './messageActions.js';
 import { addStoryFileToSidebar } from './story.js';
 
 // Render an out-of-narration <md> block as its own boxed markdown
@@ -115,6 +115,7 @@ function finalizeWrapper(wrapper, node) {
     if (node) {
         wrapper.dataset.turnId = node.id;
         addRetryButton(narr);
+        addRollbackButton(narr);
         if (node.count > 1) attachBranchSwitch(narr, node);
     }
     return narr;

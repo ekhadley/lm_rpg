@@ -45,6 +45,37 @@ function handleRetryResponse(messageElement, anchorEl) {
     }, anchorEl);
 }
 
+export function addRollbackButton(messageElement) {
+    if (messageElement.querySelector('.rollback-button')) return;
+    // Reuse the retry button's action container so both sit together.
+    let container = messageElement.querySelector('.message-actions');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'message-actions';
+        messageElement.appendChild(container);
+    }
+    const btn = document.createElement('button');
+    btn.className = 'rollback-button';
+    btn.innerHTML = '<i class="fas fa-clock-rotate-left"></i>';
+    btn.title = 'Roll back to this turn (restores story files to this point)';
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        handleRollback(messageElement, btn);
+    });
+    container.appendChild(btn);
+}
+
+function handleRollback(messageElement, anchorEl) {
+    if (userInput && userInput.disabled) return;
+    const wrapper = messageElement.closest('.assistant-turn-wrapper');
+    if (!wrapper) return;
+    const turnId = wrapper.dataset.turnId;
+    if (!turnId) return;
+    showConfirmPopup('Roll back to this turn? Story files will be restored to this point.', () => {
+        socket.emit('rollback_turn', { turn_id: turnId });
+    }, anchorEl);
+}
+
 // Build the inline edit affordance (pencil button) for a user message.
 function makeEditAffordance(userMessageContainer) {
     const actions = document.createElement('div');

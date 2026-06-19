@@ -1141,7 +1141,8 @@ body {
     opacity: 1;
 }
 
-.retry-button {
+.retry-button,
+.rollback-button {
     background-color: transparent;
     color: var(--text-muted);
     border: none;
@@ -1156,12 +1157,14 @@ body {
     font-size: 0.75rem;
 }
 
-.retry-button:hover:not(:disabled) {
+.retry-button:hover:not(:disabled),
+.rollback-button:hover:not(:disabled) {
     color: var(--accent);
     background-color: rgb(from var(--accent) r g b / 0.1);
 }
 
-.retry-button:disabled {
+.retry-button:disabled,
+.rollback-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
 }
@@ -2723,3 +2726,13 @@ html, body {
 
 .debug-separator::before { margin-right: 12px; }
 .debug-separator::after { margin-left: 12px; }
+
+.debug-files {
+    padding: 4px 16px 8px;
+    color: var(--accent);
+    font-size: 0.72rem;
+    font-family: var(--font-mono, monospace);
+    opacity: 0.85;
+}
+
+.debug-files i { margin-right: 6px; }

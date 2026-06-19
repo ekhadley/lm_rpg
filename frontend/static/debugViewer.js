@@ -32,6 +32,18 @@ function renderDebugMessages(messages) {
             return;
         }
 
+        // Per-turn changed-files marker
+        if (msg.role === '_files') {
+            const files = document.createElement('div');
+            files.className = 'debug-files';
+            const parts = [];
+            if (msg.changed && msg.changed.length) parts.push('changed: ' + msg.changed.join(', '));
+            if (msg.removed && msg.removed.length) parts.push('removed: ' + msg.removed.join(', '));
+            files.innerHTML = '<i class="fas fa-floppy-disk"></i> ' + parts.join(' · ');
+            debugModalBody.appendChild(files);
+            return;
+        }
+
         const row = document.createElement('div');
         row.className = 'debug-row';
 

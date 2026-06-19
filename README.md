@@ -60,3 +60,13 @@ Single-page app, no build step. Left sidebar for story management, center for th
 The narration uses a book-style layout (EB Garamond). Model thinking, tool calls, and dice rolls appear as small side buttons with hover popups rather than inline, keeping the narrative clean.
 
 Seven themes: Discord, Gruvbox Dark, Leather & Gilt, Tavern, Parchment, Study, Green Lamp.
+
+## Per-turn file state
+
+Story files are mutated by tool calls, but the conversation is a branching tree, so the file state on disk has to follow the active branch. Each turn records the full contents of the files it changed (a delta); a node's complete file state is reconstructed by replaying deltas root→node. Navigating the tree (regenerate, edit, branch-switch, rollback) restores that node's files to disk before continuing, so the model always sees the files as they were at that point. The changed-files indicator shows up in the debug menu.
+
+## TODO
+
+- Cyberpunk RED hard system
+- Benchmarking framework primarily for core instructions and system-specific instructions A/B testing, but also for model benchamrking
+- **Scratchpad file model (considered, tabled).** Story files only ever need to be named chunks of text the model reads and writes — the on-disk files are incidental. Making the `TurnTree` the sole store (files live as deltas on nodes, never written to disk) would delete the whole snapshot/diff/materialize layer: per-turn deltas come straight from the tools (no before/after diffing), and navigation becomes a pure leaf move with zero side effects, since file state is a pure function of the active node. Costs: system-prompt assembly, the sidebar viewer, and story seeding all currently read files off disk and would read from the tree instead; in-app editing would replace external-editor editing (write a new delta from the sidebar); `core.md`/`{system}.md` stay disk-backed (shared, dev-authored). The granular `copyStory` options become unnecessary — copy-at-a-point-in-time is just branching.

@@ -14,9 +14,9 @@ class TurnTree:
     def empty(cls):
         return cls()
 
-    def add_node(self, parent_id, role, messages) -> str:
+    def add_node(self, parent_id, role, messages, files=None) -> str:
         node_id = uuid.uuid4().hex[:8]
-        self.nodes[node_id] = {"id": node_id, "role": role, "parent": parent_id, "children": [], "messages": messages}
+        self.nodes[node_id] = {"id": node_id, "role": role, "parent": parent_id, "children": [], "messages": messages, "files": files or {}}
         if parent_id is not None:
             self.nodes[parent_id]["children"].append(node_id)
         self.current_leaf = node_id
@@ -41,6 +41,19 @@ class TurnTree:
 
     def active_messages(self) -> list[dict]:
         return self.messages_to(self.current_leaf)
+
+    # Reconstruct the full file state at a node by replaying each node's `files` delta
+    # down the path root→node. A delta value of None is a tombstone (file deleted that turn).
+    # Returns {filename: full_contents}. Empty for legacy nodes that carry no file records.
+    def file_state_at(self, node_id) -> dict[str, str]:
+        state: dict[str, str] = {}
+        for nid in self.path_to(node_id):
+            for fname, contents in self.nodes[nid].get("files", {}).items():
+                if contents is None:
+                    state.pop(fname, None)
+                else:
+                    state[fname] = contents
+        return state
 
     def set_leaf(self, node_id) -> None:
         # Descend via the most-recently-created child to a leaf.

@@ -236,8 +236,21 @@ def get_debug_messages():
     if previous:
         result.extend([truncate_system(m) for m in previous])
         result.append({"role": "_separator", "content": "Current Conversation"})
-    # Current/live conversation
-    result.extend([truncate_system(m) for m in narrator.provider.messages])
+    # Current/live conversation: system message + active-path nodes, with a marker after each
+    # turn that changed files.
+    msgs = narrator.provider.messages
+    if msgs and msgs[0].get("role") == "system":
+        result.append(truncate_system(msgs[0]))
+    for nid in narrator.tree.path():
+        node = narrator.tree.nodes[nid]
+        result.extend(truncate_system(m) for m in node["messages"])
+        files = node.get("files") or {}
+        if files:
+            result.append({
+                "role": "_files",
+                "changed": [f for f, c in files.items() if c is not None],
+                "removed": [f for f, c in files.items() if c is None],
+            })
     emit('debug_messages', result)
 
 @socket.on('retry_response')
@@ -249,6 +262,16 @@ def retry_response(data=None):
     turn_id = data.get('turn_id') if data else None
     if turn_id:
         narrator.regenerate_turn(turn_id)
+
+@socket.on('rollback_turn')
+def rollback_turn(data=None):
+    global narrator
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
+    turn_id = data.get('turn_id') if data else None
+    if turn_id:
+        narrator.rollback_to(turn_id)
 
 @socket.on('edit_message')
 def edit_message(data):
