@@ -3,6 +3,7 @@ import json
 import uuid
 import shutil
 import logging
+from datetime import datetime
 from history import TurnTree
 
 purple = '\x1b[38;2;255;0;255m'
@@ -63,12 +64,6 @@ INSTRUCTIONS_DIR = "instructions"
 def listStoryIds() -> list[str]:
     return sorted(f for f in os.listdir("./stories") if not f.startswith('.'))
 
-def listStoryMarkdownFiles(story_id: str) -> list[str]:
-    story_dir = f"./{STORIES_ROOT_DIR}/{story_id}"
-    if not os.path.exists(story_dir):
-        return []
-    return sorted(f for f in os.listdir(story_dir) if f.endswith('.md'))
-
 def _system_has_instructions(system_name: str) -> bool:
     """Returns True only if the system has an instructions file."""
     return os.path.exists(f"{INSTRUCTIONS_DIR}/{system_name}.md")
@@ -79,7 +74,7 @@ def isValidGameSystem(system_name: str) -> bool:
 
 def listGameSystemNames() -> list[str]:
     """Only return systems that are actually usable (have instructions)."""
-    return sorted([f.removesuffix('.md') for f in os.listdir(INSTRUCTIONS_DIR) if f.endswith('.md')])
+    return sorted(os.listdir(INSTRUCTIONS_DIR))
 
 def makeNewStoryDir(display_name: str, system: str, model_name: str) -> str:
     """Create a new story directory (named by a fresh uuid) and return its id."""
@@ -91,6 +86,7 @@ def makeNewStoryDir(display_name: str, system: str, model_name: str) -> str:
             "system": system,
             "model": model_name,
             "story_name": display_name,
+            "created": datetime.now().isoformat(),
         }, f, indent=4)
     return story_id
 
@@ -135,11 +131,12 @@ def loadStoryInfo(story_id: str, model_name: str = None, system_name: str = None
 def historyExists(story_id: str) -> bool:
     return os.path.exists(f"./stories/{story_id}/history.json")
 
-def getFullStoryInstruction(system_name: str, story_id: str) -> str:
-    """Fetches the system instructions and appends any existing story files (pc.md, story_plan.md, story_summary.md).
-    
+def getFullStoryInstruction(system_name: str, files: dict[str, str]) -> str:
+    """Fetches the system instructions and appends the named story-context entries (pc,
+    story_plan, story_summary) pulled from the in-memory `files` dict.
+
     Each section is wrapped in XML tags for clarity:
-    - <global_instructions>: The game system's base instructions
+    - <core_instructions>/<system_instructions>: base instructions (real files on disk)
     - <story_plan>: The story plan/outline
     - <player_character>: The player character details
     - <story_summary>: Summary of story events so far
@@ -155,28 +152,11 @@ def getFullStoryInstruction(system_name: str, story_id: str) -> str:
     with open(f"{INSTRUCTIONS_DIR}/{system_name}.md", 'r') as f:
         system_instructions = f.read()
     result_parts.append(f"<system_instructions>\n{system_instructions}\n</system_instructions>")
-    
-    # Load story plan (optional)
-    story_plan_path = f"{STORIES_ROOT_DIR}/{story_id}/story_plan.md"
-    if os.path.exists(story_plan_path):
-        with open(story_plan_path, 'r') as f:
-            story_plan = f.read()
-        result_parts.append(f"<story_plan>\n{story_plan}\n</story_plan>")
-    
-    # Load player character (optional)
-    pc_path = f"{STORIES_ROOT_DIR}/{story_id}/pc.md"
-    if os.path.exists(pc_path):
-        with open(pc_path, 'r') as f:
-            player_character = f.read()
-        result_parts.append(f"<player_character>\n{player_character}\n</player_character>")
-    
-    # Load story summary (optional)
-    story_summary_path = f"{STORIES_ROOT_DIR}/{story_id}/story_summary.md"
-    if os.path.exists(story_summary_path):
-        with open(story_summary_path, 'r') as f:
-            story_summary = f.read()
-        result_parts.append(f"<story_summary>\n{story_summary}\n</story_summary>")
-    
+
+    for fname, tag in (("story_plan", "story_plan"), ("pc", "player_character"), ("story_summary", "story_summary")):
+        if fname in files:
+            result_parts.append(f"<{tag}>\n{files[fname]}\n</{tag}>")
+
     return "\n\n".join(result_parts)
 
 # === History Archive Functions ===
@@ -240,6 +220,19 @@ def loadAllPreviousHistory(story_id: str) -> list[dict]:
     
     return all_messages
 
+def _sourceFileState(source_dir: str) -> dict[str, str]:
+    """Reconstruct a story's current story-context files from its history tree (empty if no tree
+    or a legacy flat history, which carries no file deltas)."""
+    history_path = os.path.join(source_dir, "history.json")
+    if not os.path.exists(history_path):
+        return {}
+    with open(history_path) as f:
+        data = json.load(f)
+    if "nodes" not in data:
+        return {}
+    tree = TurnTree.deserialize(data)
+    return tree.file_state_at(tree.current_leaf)
+
 def copyStory(source_story_id: str, new_name: str, new_model_name: str, copy_pc: bool = True, copy_plan: bool = True, copy_summary: bool = True, copy_history: bool = False, copy_other: bool = True) -> str | None:
     """Copy a story into a fresh uuid directory.
 
@@ -247,9 +240,9 @@ def copyStory(source_story_id: str, new_name: str, new_model_name: str, copy_pc:
         source_story_id: Id (uuid directory) of the source story to copy
         new_name: Display name for the new story
         new_model_name: Model name for the new story
-        copy_pc: Copy pc.md
-        copy_plan: Copy story_plan.md
-        copy_summary: Copy story_summary.md
+        copy_pc: Copy the pc story-context entry
+        copy_plan: Copy the story_plan story-context entry
+        copy_summary: Copy the story_summary story-context entry
         copy_history: Copy history.json and archived conversations (previous/)
         copy_other: Copy any other story files (e.g. npc character sheets)
 
@@ -279,34 +272,25 @@ def copyStory(source_story_id: str, new_name: str, new_model_name: str, copy_pc:
                 "story_name": new_name,
             }, f, indent=4)
 
-        # Copy the named markdown files that are toggled on
-        named_files = {"pc.md": copy_pc, "story_plan.md": copy_plan, "story_summary.md": copy_summary}
-        for md_file, include in named_files.items():
-            if include:
-                source_path = os.path.join(source_dir, md_file)
-                if os.path.exists(source_path):
-                    shutil.copy2(source_path, os.path.join(new_dir, md_file))
-
-        # Copy any other loose story files (npc sheets, etc.), skipping the ones handled separately
-        if copy_other:
-            reserved = set(named_files) | {"info.json", "history.json", "previous"}
-            for name in os.listdir(source_dir):
-                source_path = os.path.join(source_dir, name)
-                if name not in reserved and os.path.isfile(source_path):
-                    shutil.copy2(source_path, os.path.join(new_dir, name))
-
-        # Copy history files if requested
+        # Story context now lives inside the history tree. Copying the whole history brings the
+        # files along; a no-history copy synthesizes a fresh tree whose hidden root carries just
+        # the selected files (so the new story opens with those files and an empty conversation).
         if copy_history:
-            # Copy current history.json if it exists
             source_history = os.path.join(source_dir, "history.json")
             if os.path.exists(source_history):
                 shutil.copy2(source_history, os.path.join(new_dir, "history.json"))
-
-            # Copy previous history directory if it exists
             source_prev_dir = getPreviousHistoryDir(source_story_id)
             if os.path.exists(source_prev_dir):
-                new_prev_dir = getPreviousHistoryDir(new_story_id)
-                shutil.copytree(source_prev_dir, new_prev_dir)
+                shutil.copytree(source_prev_dir, getPreviousHistoryDir(new_story_id))
+        else:
+            state = _sourceFileState(source_dir)
+            named = {"pc": copy_pc, "story_plan": copy_plan, "story_summary": copy_summary}
+            selected = {f: c for f, c in state.items() if (named[f] if f in named else copy_other)}
+            if selected:
+                tree = TurnTree.empty()
+                tree.add_node(None, "user", [], files=selected)
+                with open(os.path.join(new_dir, "history.json"), "w") as f:
+                    json.dump({"model_name": new_model_name, "system_name": source_system, **tree.serialize()}, f, indent=4)
 
         return new_story_id
     except Exception as e:

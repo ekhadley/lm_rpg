@@ -3,7 +3,7 @@ import {
     setCurrentNarratorMessageElement,
     setAccumulatedContent,
 } from './state.js';
-import { showTypingIndicator, showConfirmPopup } from './ui.js';
+import { showTypingIndicator, showConfirmPopup, showForkPopup } from './ui.js';
 
 export function addRetryButton(messageElement) {
     if (messageElement.querySelector('.retry-button')) return;
@@ -57,7 +57,7 @@ export function addRollbackButton(messageElement) {
     const btn = document.createElement('button');
     btn.className = 'rollback-button';
     btn.innerHTML = '<i class="fas fa-clock-rotate-left"></i>';
-    btn.title = 'Roll back to this turn (restores story files to this point)';
+    btn.title = 'Roll back to this turn (restores story context to this point)';
     btn.addEventListener('click', function(e) {
         e.stopPropagation();
         handleRollback(messageElement, btn);
@@ -71,8 +71,37 @@ function handleRollback(messageElement, anchorEl) {
     if (!wrapper) return;
     const turnId = wrapper.dataset.turnId;
     if (!turnId) return;
-    showConfirmPopup('Roll back to this turn? Story files will be restored to this point.', () => {
+    showConfirmPopup('Roll back to this turn? Story context will be restored to this point.', () => {
         socket.emit('rollback_turn', { turn_id: turnId });
+    }, anchorEl);
+}
+
+export function addForkButton(messageElement) {
+    if (messageElement.querySelector('.fork-button')) return;
+    let container = messageElement.querySelector('.message-actions');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'message-actions';
+        messageElement.appendChild(container);
+    }
+    const btn = document.createElement('button');
+    btn.className = 'fork-button';
+    btn.innerHTML = '<i class="fas fa-code-branch"></i>';
+    btn.title = 'Fork to a new story from this turn';
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        handleFork(messageElement, btn);
+    });
+    container.appendChild(btn);
+}
+
+function handleFork(messageElement, anchorEl) {
+    const wrapper = messageElement.closest('.assistant-turn-wrapper');
+    if (!wrapper) return;
+    const turnId = wrapper.dataset.turnId;
+    if (!turnId) return;
+    showForkPopup('', (name) => {
+        socket.emit('fork_story', { turn_id: turnId, new_story_name: name });
     }, anchorEl);
 }
 

@@ -207,6 +207,47 @@ export function hideConfirmPopup() {
     confirmCallback = null;
 }
 
+// Fork popup: a name field + Fork/Cancel. onConfirm receives the entered name.
+let forkCallback = null;
+
+export function showForkPopup(defaultName, onConfirm, anchorEl) {
+    const popup = document.getElementById('fork-popup');
+    const input = document.getElementById('fork-popup-name');
+    if (!popup || !input) return;
+    input.value = defaultName || '';
+    forkCallback = onConfirm;
+    positionPopupNear(popup, anchorEl || document.body);
+    input.focus();
+    input.select();
+}
+
+export function hideForkPopup() {
+    const popup = document.getElementById('fork-popup');
+    if (popup) popup.classList.remove('show');
+    forkCallback = null;
+}
+
+export function initForkPopup() {
+    const cancelBtn = document.getElementById('fork-popup-cancel');
+    const confirmBtn = document.getElementById('fork-popup-confirm');
+    const input = document.getElementById('fork-popup-name');
+    const submit = () => {
+        const name = input.value.trim();
+        if (name && forkCallback) forkCallback(name);
+        hideForkPopup();
+    };
+    if (cancelBtn) cancelBtn.addEventListener('click', hideForkPopup);
+    if (confirmBtn) confirmBtn.addEventListener('click', submit);
+    if (input) input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); submit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); hideForkPopup(); }
+    });
+    document.addEventListener('click', function(e) {
+        const popup = document.getElementById('fork-popup');
+        if (popup && popup.classList.contains('show') && !popup.contains(e.target)) hideForkPopup();
+    });
+}
+
 export function initConfirmPopup() {
     const cancelBtn = document.getElementById('confirm-popup-cancel');
     const confirmBtn = document.getElementById('confirm-popup-confirm');

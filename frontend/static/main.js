@@ -7,7 +7,7 @@ import { exportConversation } from './debugViewer.js';
 import {
     setupCostPopupBehavior, initTheme, initSettings,
     showSummarizePopup, hideSummarizePopup, positionSummarizePopup,
-    initConfirmPopup, hideConfirmPopup,
+    initConfirmPopup, hideConfirmPopup, initForkPopup,
 } from './ui.js';
 
 // Initialize dropdowns
@@ -29,6 +29,7 @@ window.onload = function() {
     if (userInput) userInput.focus();
     setupCostPopupBehavior();
     initConfirmPopup();
+    initForkPopup();
     initTheme();
     initSettings();
 

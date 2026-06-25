@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 # A branching conversation tree. Each node is one user message OR one narrator
 # response (the assistant/tool messages from a single tool-calling loop). Nodes
@@ -16,6 +17,9 @@ class TurnTree:
 
     def add_node(self, parent_id, role, messages, files=None) -> str:
         node_id = uuid.uuid4().hex[:8]
+        now = datetime.now().isoformat()
+        for m in messages:
+            m.setdefault("timestamp", now)
         self.nodes[node_id] = {"id": node_id, "role": role, "parent": parent_id, "children": [], "messages": messages, "files": files or {}}
         if parent_id is not None:
             self.nodes[parent_id]["children"].append(node_id)
@@ -42,13 +46,16 @@ class TurnTree:
     def active_messages(self) -> list[dict]:
         return self.messages_to(self.current_leaf)
 
-    # Reconstruct the full file state at a node by replaying each node's `files` delta
-    # down the path root→node. A delta value of None is a tombstone (file deleted that turn).
-    # Returns {filename: full_contents}. Empty for legacy nodes that carry no file records.
+    # Reconstruct the full story-context file state at a node by replaying each node's `files`
+    # delta down the path root→node. A delta value of None is a tombstone (file deleted that turn).
+    # Keys are bare filenames; '/'-containing keys (legacy instruction-file snapshots written by an
+    # older version) are ignored. Returns {filename: full_contents}, empty for nodes with no records.
     def file_state_at(self, node_id) -> dict[str, str]:
         state: dict[str, str] = {}
         for nid in self.path_to(node_id):
             for fname, contents in self.nodes[nid].get("files", {}).items():
+                if "/" in fname:
+                    continue
                 if contents is None:
                     state.pop(fname, None)
                 else:

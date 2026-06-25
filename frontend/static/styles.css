@@ -197,6 +197,17 @@ body {
     flex-direction: column;
 }
 
+.sidebar-resize {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    cursor: col-resize;
+    z-index: 20;
+}
+
+
 .sidebar-header {
     padding: 16px;
     display: flex;
@@ -264,11 +275,11 @@ body {
 }
 
 .story-item {
-    padding: 12px 16px;
+    padding: 6px 12px;
     cursor: pointer;
     color: var(--text-normal);
     border-radius: 4px;
-    margin: 4px 8px;
+    margin: 2px 6px;
     transition: background-color 0.2s;
     display: flex;
     align-items: center;
@@ -396,7 +407,7 @@ body {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
     font-size: 1rem;
 }
 
@@ -407,7 +418,7 @@ body {
 }
 
 .theme-toggle-btn:active {
-    transform: scale(0.98);
+    transform: scale(0.96);
 }
 
 /* Theme Picker — always dark regardless of active theme */
@@ -418,7 +429,7 @@ body {
     right: 16px;
     background: #1a1b1e;
     border: 1px solid #3f4147;
-    border-radius: 8px;
+    border-radius: 14px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
     opacity: 0;
     visibility: hidden;
@@ -453,7 +464,7 @@ body {
     color: #e3e5e8;
     font-family: var(--font-primary);
     font-size: 0.9rem;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .theme-option:hover {
@@ -504,10 +515,6 @@ body {
     z-index: 20;
 }
 
-.right-sidebar-resize:hover,
-.right-sidebar-resize.active {
-    background-color: var(--accent);
-}
 
 .file-list {
     list-style: none;
@@ -681,6 +688,7 @@ body {
     margin-top: 1em;
     margin-bottom: 0.5em;
     font-family: 'EB Garamond', Georgia, serif;
+    text-wrap: balance;
 }
 
 .file-viewer-body h1 { font-size: 1.5em; }
@@ -818,7 +826,7 @@ body {
 
 .chat-header h5 {
     margin: 0;
-    font-size: 1rem;
+    font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-bright);
     white-space: nowrap;
@@ -835,49 +843,11 @@ body {
     text-overflow: ellipsis;
 }
 
-/* Header Buttons (Summarize, Export, etc.) */
-.header-button {
-    background-color: transparent;
+.story-uuid-subtext {
+    font-size: 0.65rem;
     color: var(--text-muted);
-    border: none;
-    border-radius: 4px;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.header-button:hover {
-    color: var(--accent);
-    background-color: rgb(from var(--accent) r g b / 0.1);
-}
-
-.summarize-button:hover {
-    color: var(--warning);
-    background-color: rgb(from var(--warning) r g b / 0.1);
-}
-
-/* Legacy export-button class for backwards compatibility */
-.export-button {
-    background-color: transparent;
-    color: var(--text-muted);
-    border: none;
-    border-radius: 4px;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.export-button:hover {
-    color: var(--accent);
-    background-color: rgb(from var(--accent) r g b / 0.1);
+    opacity: 0.7;
+    white-space: nowrap;
 }
 
 .chat-container {
@@ -1038,6 +1008,7 @@ body {
     margin-top: 1.25em;
     margin-bottom: 0.5em;
     font-weight: 500;
+    text-wrap: balance;
 }
 
 .narrator-message h1 { font-size: 1.6em; }
@@ -1142,7 +1113,8 @@ body {
 }
 
 .retry-button,
-.rollback-button {
+.rollback-button,
+.fork-button {
     background-color: transparent;
     color: var(--text-muted);
     border: none;
@@ -1153,12 +1125,13 @@ body {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
     font-size: 0.75rem;
 }
 
 .retry-button:hover:not(:disabled),
-.rollback-button:hover:not(:disabled) {
+.rollback-button:hover:not(:disabled),
+.fork-button:hover:not(:disabled) {
     color: var(--accent);
     background-color: rgb(from var(--accent) r g b / 0.1);
 }
@@ -1181,7 +1154,7 @@ body {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
     font-size: 0.75rem;
 }
 
@@ -1212,7 +1185,7 @@ body {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
 }
 
 .branch-arrow:hover {
@@ -1223,6 +1196,7 @@ body {
 .branch-label {
     min-width: 2.2em;
     text-align: center;
+    font-variant-numeric: tabular-nums;
 }
 
 /* Inline editing mode */
@@ -1269,7 +1243,7 @@ body {
     justify-content: center;
     cursor: pointer;
     font-size: 0.85rem;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
 }
 
 .edit-save-btn {
@@ -1451,7 +1425,7 @@ body {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
     opacity: 0.4;
     z-index: 100;
 }
@@ -1461,20 +1435,15 @@ body {
     color: var(--accent);
 }
 
-.floating-button.left {
-    left: calc(var(--sidebar-width) + 24px);
-}
-
-.floating-button.right {
-    right: 32px;
-}
-
-/* Cost button floating container */
+/* Floating button cluster (archive, cost, debug) */
 .floating-cost-container {
     position: fixed;
     bottom: 24px;
     right: calc(var(--right-sidebar-width) + 32px);
     z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .floating-cost-container .floating-button {
@@ -1541,6 +1510,7 @@ body {
     color: var(--text-bright);
     margin-bottom: 1rem;
     font-weight: 500;
+    text-wrap: balance;
 }
 
 .welcome-container p {
@@ -1549,6 +1519,7 @@ body {
     font-family: 'EB Garamond', Georgia, serif;
     font-size: 1.1rem;
     line-height: 1.6;
+    text-wrap: pretty;
 }
 
 /* Loading Animation - cycling ellipsis */
@@ -1768,6 +1739,7 @@ body {
     font-size: 0.8rem;
     color: var(--text-muted);
     line-height: 1.5;
+    text-wrap: pretty;
 }
 
 .summarize-popup-body p {
@@ -1790,7 +1762,7 @@ body {
     font-size: 0.8rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
     font-family: var(--font-primary);
 }
 
@@ -1815,7 +1787,7 @@ body {
 }
 
 .summarize-popup-btn:active {
-    transform: scale(0.98);
+    transform: scale(0.96);
 }
 
 /* Cost Popup Styles */
@@ -1888,6 +1860,7 @@ body {
     font-weight: 600;
     color: var(--text-normal);
     font-family: 'Consolas', 'Monaco', monospace;
+    font-variant-numeric: tabular-nums;
 }
 
 /* ===== Styles moved from index.html ===== */
@@ -1899,6 +1872,8 @@ html, body {
     padding: 0;
     overflow: hidden;
     color: var(--text-normal);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* Override Bootstrap defaults */
@@ -1933,7 +1908,7 @@ html, body {
     border-radius: 20px;
     padding: 6px 8px 6px 8px;
     border: 1px solid var(--border);
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
     position: relative;
     overflow: visible;
 }
@@ -1982,7 +1957,7 @@ html, body {
     border: none;
     padding: 0;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
     user-select: none;
     width: 100%;
 }
@@ -2123,12 +2098,31 @@ html, body {
     margin: -1px -4px;
 }
 
+.story-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    margin-top: 2px;
+}
+
 .story-meta {
     font-size: 0.7rem;
     color: var(--text-muted);
-    margin-top: 2px;
     text-align: left;
-    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.story-date {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    opacity: 0.7;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-left: 8px;
 }
 
 /* Story Menu Button */
@@ -2311,7 +2305,7 @@ html, body {
     border-radius: 4px;
     background: var(--msg-user);
     position: relative;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .custom-checkbox input:checked + .checkmark {
@@ -2430,7 +2424,11 @@ html, body {
     font-size: 0.9rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
+}
+
+.btn:active {
+    transform: scale(0.96);
 }
 
 .btn-primary {
@@ -2489,6 +2487,24 @@ html, body {
     color: var(--text-normal);
     font-size: 0.9rem;
     line-height: 1.5;
+    text-wrap: pretty;
+}
+
+#fork-popup-name {
+    width: 100%;
+    margin-top: 10px;
+    background-color: var(--msg-user);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-normal);
+    padding: 10px 12px;
+    font-size: 0.9rem;
+    box-sizing: border-box;
+}
+
+#fork-popup-name:focus {
+    outline: none;
+    border-color: var(--accent);
 }
 
 .confirm-popup-footer {

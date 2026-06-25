@@ -1,6 +1,6 @@
 # The Walking Dead — Soft System
 
-This is a **soft system**. There are no stats, no modifiers, no character sheets, no structured combat. Dice are used for genuine uncertainty, not mechanical resolution. See `core.md` for what this means.
+This is a **soft system**. There are no stats, no modifiers, no character sheets, no structured combat. Dice are used for genuine uncertainty, not mechanical resolution. See the core instructions for what this means.
 
 ---
 
@@ -92,7 +92,7 @@ Resources are handled in one of two modes, and you should move between them deli
 
 **Hard inventory** is the mode you switch into the moment a specific limited resource becomes the crux of the tension. When an exact count could be the difference between life and death — bullets during a standoff or a run through a herd, doses of insulin or antibiotics keeping someone alive, fuel for a vehicle that has to reach somewhere, days of food during a siege — track it precisely and hold the line. State the quantity, decrement it as it is used, make sure the player knows the count, and do not let it quietly replenish. If the character has six rounds, they have six rounds; when those are gone, they are gone, and that fact drives the scene.
 
-The PC's inventory of limited, significant items lives in `pc.md`, and it should be specific enough to support hard-inventory mode when you enter it — not "some ammo" but the kinds and rough quantities of what they actually carry. Update it as things are acquired, used, lost, or spent. The trigger to switch from ambient to hard tracking is simple: the instant a specific quantity could decide whether someone lives, start counting, and count out loud.
+The PC's inventory of limited, significant items lives in `pc`, and it should be specific enough to support hard-inventory mode when you enter it — not "some ammo" but the kinds and rough quantities of what they actually carry. Update it as things are acquired, used, lost, or spent. The trigger to switch from ambient to hard tracking is simple: the instant a specific quantity could decide whether someone lives, start counting, and count out loud.
 
 ---
 
@@ -102,7 +102,7 @@ The player character may be an original character or a canon character. Either w
 
 ### PC File
 
-Since this is a soft system, `pc.md` is not a stat block. It is a character profile:
+Since this is a soft system, `pc` is not a stat block. It is a character profile:
 - **Name**
 - **Background** — who they were before, who they are now, what they've survived
 - **Capabilities** — what they're good at, what they're not, what they've learned to do since the world ended

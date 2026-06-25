@@ -24,6 +24,7 @@
     <div class="main-container">
         <!-- Sidebar with story list -->
         <div class="sidebar">
+            <div class="sidebar-resize" id="sidebar-resize"></div>
             <div class="sidebar-header">
                 <h5 class="sidebar-title">Stories</h5>
                 <div class="sidebar-header-actions">
@@ -43,7 +44,10 @@
                         <div class="story-name-row">
                             <span class="story-name">{{ story.name }}</span>
                         </div>
-                        <span class="story-meta">{{ story.model.split('/')|last }}</span>
+                        <div class="story-meta-row">
+                            <span class="story-meta">{{ story.model.split('/')|last }}</span>
+                            <span class="story-date" data-ts="{{ story.last_activity }}"></span>
+                        </div>
                     </div>
                     <button class="story-menu-btn" data-story="{{ story.id }}" title="Story options">
                         <i class="fas fa-ellipsis-v"></i>
@@ -113,10 +117,8 @@
                         <h5 id="current-story-title"></h5>
                     </div>
                     <div id="current-story-model" class="story-model-subtext" style="display: none;"></div>
+                    <div id="current-story-uuid" class="story-uuid-subtext" style="display: none;"></div>
                 </div>
-                <button id="export-button" class="header-button export-button" title="Export conversation to console">
-                    <i class="fas fa-code"></i>
-                </button>
             </div>
             <div class="chat-container">
                 <div id="chat-history" class="chat-history">
@@ -141,12 +143,15 @@
             </div>
 
             <!-- Floating corner buttons -->
-            <button id="summarize-button" class="floating-button left" title="Summarize current conversation">
-                <i class="fas fa-archive"></i>
-            </button>
             <div class="floating-cost-container">
-                <button id="cost-button" class="floating-button right" title="Cost information">
+                <button id="summarize-button" class="floating-button" title="Summarize current conversation">
+                    <i class="fas fa-archive"></i>
+                </button>
+                <button id="cost-button" class="floating-button" title="Cost information">
                     <i class="fas fa-sack-dollar"></i>
+                </button>
+                <button id="export-button" class="floating-button" title="Export conversation to console">
+                    <i class="fas fa-code"></i>
                 </button>
                 <div id="cost-popup" class="cost-popup">
                     <div class="cost-popup-header">
@@ -179,11 +184,11 @@
             </div>
         </div>
 
-        <!-- Right sidebar: story files -->
+        <!-- Right sidebar: story context -->
         <div class="right-sidebar" id="right-sidebar">
             <div class="right-sidebar-resize" id="right-sidebar-resize"></div>
             <div class="sidebar-header">
-                <h5 class="sidebar-title">Story Files</h5>
+                <h5 class="sidebar-title">Story Context</h5>
             </div>
             <ul class="file-list" id="file-list"></ul>
             <div class="right-sidebar-footer" id="right-sidebar-footer">
@@ -320,6 +325,17 @@
         </div>
     </div>
 
+    <div id="fork-popup" class="side-popup confirm-popup">
+        <div class="confirm-popup-body">
+            <p>Fork to a new story from this turn:</p>
+            <input type="text" id="fork-popup-name" class="form-control" placeholder="New story name">
+        </div>
+        <div class="confirm-popup-footer">
+            <button class="btn btn-secondary" id="fork-popup-cancel">Cancel</button>
+            <button class="btn btn-primary" id="fork-popup-confirm">Fork</button>
+        </div>
+    </div>
+
     <!-- Select Story System/Model Modal -->
     <div id="select-story-config-modal" class="modal-overlay">
         <div class="modal-content">
@@ -411,7 +427,7 @@
             </div>
             <div class="form-group">
                 <label>Include</label>
-                <label class="custom-checkbox"><input type="checkbox" id="copy_pc" checked><span class="checkmark"></span>Character (pc.md)</label>
+                <label class="custom-checkbox"><input type="checkbox" id="copy_pc" checked><span class="checkmark"></span>Character (pc)</label>
                 <label class="custom-checkbox"><input type="checkbox" id="copy_plan" checked><span class="checkmark"></span>Story plan</label>
                 <label class="custom-checkbox"><input type="checkbox" id="copy_summary" checked><span class="checkmark"></span>Story summary</label>
                 <label class="custom-checkbox"><input type="checkbox" id="copy_other" checked><span class="checkmark"></span>All other story files (npc sheets, etc.)</label>

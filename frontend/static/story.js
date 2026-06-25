@@ -1,5 +1,12 @@
 const stripProvider = (model) => model ? model.split('/').pop() : model;
 
+// Date for a story's last activity as mm/dd/yy. Empty for stories with no timestamp.
+const formatStoryDate = (ts) => {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
+};
+
 import {
     socket, storyList, chatHistory, chatHeader, welcomeWrapper, userInput,
     newStoryBtn, createStoryBtn, createStoryModal, createStoryModalClose, createStoryModalCancel,
@@ -55,6 +62,11 @@ function enterStoryView({ storyId, displayName, model, system }) {
         modelSubtext.textContent = stripProvider(model);
         modelSubtext.style.display = model ? '' : 'none';
     }
+    const uuidSubtext = document.getElementById('current-story-uuid');
+    if (uuidSubtext) {
+        uuidSubtext.textContent = storyId;
+        uuidSubtext.style.display = storyId ? '' : 'none';
+    }
     if (chatHistory) chatHistory.innerHTML = '';
     if (welcomeWrapper) welcomeWrapper.style.display = 'none';
     if (chatHeader) chatHeader.style.display = 'flex';
@@ -101,11 +113,18 @@ export function addNewStory(story) {
     nameSpan.className = 'story-name';
     nameSpan.textContent = story.name;
     nameRow.appendChild(nameSpan);
+    const metaRow = document.createElement('div');
+    metaRow.className = 'story-meta-row';
     const metaSpan = document.createElement('span');
     metaSpan.className = 'story-meta';
     metaSpan.textContent = stripProvider(story.model) || 'unknown';
+    const dateSpan = document.createElement('span');
+    dateSpan.className = 'story-date';
+    dateSpan.textContent = formatStoryDate(story.last_activity);
+    metaRow.appendChild(metaSpan);
+    metaRow.appendChild(dateSpan);
     contentDiv.appendChild(nameRow);
-    contentDiv.appendChild(metaSpan);
+    contentDiv.appendChild(metaRow);
 
     const menuBtn = document.createElement('button');
     menuBtn.className = 'story-menu-btn';
@@ -122,7 +141,8 @@ export function addNewStory(story) {
     li.appendChild(contentDiv);
     li.appendChild(menuBtn);
     li.appendChild(contextMenu);
-    storyList.appendChild(li);
+    // Newest story has the most recent activity, so it goes to the top of the list.
+    storyList.prepend(li);
 }
 
 function closeCopyStoryModal() {
@@ -161,6 +181,9 @@ function startRename(nameSpan) {
 }
 
 export function initStory() {
+    // Fill in last-activity dates on the server-rendered story list
+    document.querySelectorAll('.story-date[data-ts]').forEach(el => { el.textContent = formatStoryDate(el.dataset.ts); });
+
     // New Story button opens create modal
     if (newStoryBtn) {
         newStoryBtn.addEventListener('click', () => createStoryModal && createStoryModal.classList.add('show'));
@@ -364,6 +387,8 @@ export function initStory() {
 
     socket.on('story_copied', function(data) { addNewStory(data); });
 
+    socket.on('story_forked', function(data) { addNewStory(data); selectStoryDirectly(data.id); });
+
     socket.on('story_renamed', function(data) {
         const { story_id, new_name } = data;
         if (storyList) {
@@ -390,7 +415,7 @@ export function initStory() {
         // Populate right sidebar file list
         if (fileList) {
             fileList.innerHTML = '';
-            (data.story_files || []).forEach(addStoryFileToSidebar);
+            (data.story_context || []).forEach(addStoryFileToSidebar);
         }
         // Update system instructions label
         const label = document.getElementById('system-instructions-label');
@@ -521,6 +546,32 @@ export function initStory() {
     if (fileViewerOverlay) {
         fileViewerOverlay.addEventListener('click', function(e) {
             if (e.target === fileViewerOverlay) fileViewerOverlay.classList.remove('show');
+        });
+    }
+
+    // Left sidebar resize
+    const leftResizeHandle = document.getElementById('sidebar-resize');
+    const leftSidebar = document.querySelector('.sidebar');
+    if (leftResizeHandle && leftSidebar) {
+        let isResizing = false;
+        leftResizeHandle.addEventListener('mousedown', function(e) {
+            isResizing = true;
+            leftResizeHandle.classList.add('active');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', function(e) {
+            if (!isResizing) return;
+            const newWidth = Math.max(180, Math.min(500, e.clientX));
+            leftSidebar.style.width = newWidth + 'px';
+        });
+        document.addEventListener('mouseup', function() {
+            if (!isResizing) return;
+            isResizing = false;
+            leftResizeHandle.classList.remove('active');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
         });
     }
 

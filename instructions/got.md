@@ -72,7 +72,7 @@ The player character may be an original character or a canon character. Either w
 
 ### PC File
 
-Since this is a soft system, `pc.md` is not a stat block. It is a character profile:
+Since this is a soft system, `pc` is not a stat block. It is a character profile:
 - **Name and titles**
 - **House and allegiance** (if applicable)
 - **Position** — what role do they occupy, what power and access do they have

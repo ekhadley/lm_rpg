@@ -1,8 +1,8 @@
-# D&D 5th Edition — Rules Reference
+# D&D 5e 2024 — Rules Reference
 
 This document contains a condensed ruleset reference for a D&D 5th Edition RPG. It is a hard game system, not soft. This file covers the setting rules, mechanics, and spellbook reference.
 
-**Important**: Use only D&D 5th Edition rules. Do not mix in mechanics from 3.5e, 4e, Pathfinder, or other systems.
+**Important**: Use only D&D 5th Edition 2024 rules. Do not mix in mechanics from the 2014 edition, 3.5e, 4e, Pathfinder, or other systems.
 
 ---
 

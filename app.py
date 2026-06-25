@@ -8,7 +8,7 @@ from narrator import Narrator
 from utils import (
     logger, listStoryIds, loadStoryInfo, makeNewStoryDir,
     historyExists, isValidGameSystem, listGameSystemNames,
-    archiveHistory, copyStory, archiveStoryDir, renameStory, listStoryMarkdownFiles,
+    archiveHistory, copyStory, archiveStoryDir, renameStory,
     loadAllPreviousHistory,
 )
 
@@ -26,6 +26,7 @@ models = [
     "openai/gpt-5.5",
     "openai/gpt-4o-mini",
     "google/gemini-3.1-pro-preview",
+    "google/gemini-3.5-flash",
     "moonshotai/kimi-k2.5",
 ]
 
@@ -70,7 +71,7 @@ def select_story(data: dict[str, str]):
     emit('story_locked', {
         "model_name": narrator.model_name,
         "system_name": story_info["system"],
-        "story_files": listStoryMarkdownFiles(story_id),
+        "story_context": list(narrator.files.keys()),
     })
     logger.info(f"narrator initialized: {narrator}")
 
@@ -104,7 +105,8 @@ def create_story(data: dict[str, str]):
             "id": story_id,
             "name": display_name,
             "system": system,
-            "model": model_name
+            "model": model_name,
+            "last_activity": story_last_activity(story_id)
         })
 
 @socket.on('copy_story')
@@ -206,16 +208,10 @@ def get_story_file(data: dict[str, str]):
         emit('error', {"message": "No story selected"})
         return
     filename = data.get('filename', '')
-    if not filename.endswith('.md') or '/' in filename or '\\' in filename:
-        emit('error', {"message": "Invalid filename"})
-        return
-    filepath = f"./stories/{narrator.story_id}/{filename}"
-    if not os.path.exists(filepath):
+    if filename not in narrator.files:
         emit('error', {"message": f"File not found: {filename}"})
         return
-    with open(filepath, 'r') as f:
-        content = f.read()
-    emit('story_file_content', {"filename": filename, "content": content})
+    emit('story_file_content', {"filename": filename, "content": narrator.files[filename]})
 
 @socket.on('get_debug_messages')
 def get_debug_messages():
@@ -273,6 +269,19 @@ def rollback_turn(data=None):
     if turn_id:
         narrator.rollback_to(turn_id)
 
+@socket.on('fork_story')
+def fork_story(data: dict[str, str]):
+    global narrator
+    new_name = data.get('new_story_name', '').strip()
+    turn_id = data.get('turn_id')
+    if narrator is None or not new_name or not turn_id:
+        emit('error', {"message": "Fork requires an active story, a turn, and a name"})
+        return
+    new_id = narrator.fork_to(turn_id, new_name)
+    if new_id:
+        info = loadStoryInfo(new_id)
+        emit('story_forked', {"id": new_id, "name": new_name, "system": info.get('system', 'hp'), "model": info.get('model')})
+
 @socket.on('edit_message')
 def edit_message(data):
     global narrator
@@ -297,6 +306,18 @@ def switch_branch(data):
     if turn_id:
         narrator.switch_branch(turn_id, direction)
 
+def story_last_activity(story_id):
+    """Timestamp of the most recent message in the story, falling back to the story's creation time.
+    ISO-8601 strings sort chronologically as plain text, so we can compare them directly."""
+    history_path = f"./stories/{story_id}/history.json"
+    if os.path.exists(history_path):
+        with open(history_path) as f:
+            history = json.load(f)
+        timestamps = [m.get("timestamp", "") for n in history.get("nodes", []) for m in n["messages"]]
+        if any(timestamps):
+            return max(timestamps)
+    return loadStoryInfo(story_id).get("created", "")
+
 def get_stories_with_info():
     """Helper to load all stories with their info. 'id' is the uuid directory, 'name' is the display name."""
     stories_with_info = []
@@ -307,7 +328,8 @@ def get_stories_with_info():
                 'id': story_id,
                 'name': story_info.get('story_name', story_id),
                 'system': story_info.get('system', 'unknown'),
-                'model': story_info.get('model', 'unknown')
+                'model': story_info.get('model', 'unknown'),
+                'last_activity': story_last_activity(story_id)
             })
         except Exception as e:
             # If we can't load info, still show the story
@@ -315,9 +337,10 @@ def get_stories_with_info():
                 'id': story_id,
                 'name': story_id,
                 'system': 'unknown',
-                'model': 'unknown'
+                'model': 'unknown',
+                'last_activity': story_last_activity(story_id)
             })
-    return sorted(stories_with_info, key=lambda s: s['name'])
+    return sorted(stories_with_info, key=lambda s: s['last_activity'], reverse=True)
 
 @app.route('/')
 def index():

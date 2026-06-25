@@ -1,6 +1,6 @@
 import os
 import json
-from utils import getFullStoryInstruction, loadAllPreviousHistory
+from utils import getFullStoryInstruction, loadAllPreviousHistory, makeNewStoryDir
 from model_tools import Toolbox, SYSTEM_TOOLBOXES
 from callbacks import WebCallbackHandler
 from openrouter import OpenRouterProvider
@@ -12,9 +12,10 @@ class Narrator:
         self.model_name: str = model_name
         self.system_name: str = system_name
         self.story_id: str = story_id
-        self.tb: Toolbox = SYSTEM_TOOLBOXES[system_name](story_id, system_name)
+        self.files: dict[str, str] = {}  # in-memory story context (the single source of truth, reconstructed from the tree)
+        self.tb: Toolbox = SYSTEM_TOOLBOXES[system_name](self.files)
         self.socket: SocketIO = socket
-        self.system_prompt = getFullStoryInstruction(system_name, story_id)
+        self.system_prompt = getFullStoryInstruction(system_name, self.files)
         self.story_history_path = f"./stories/{story_id}/history.json"
         self.thinking_effort = "max"
         self.tree = TurnTree.empty()
@@ -28,8 +29,8 @@ class Narrator:
         )
 
     def _systemMessage(self) -> dict:
-        # Re-read instruction/story files live so mid-conversation edits take effect on the next turn (incl. retry/edit).
-        self.system_prompt = getFullStoryInstruction(self.system_name, self.story_id)
+        # Re-read the instruction files live (so edits take effect next turn); story context comes from self.files.
+        self.system_prompt = getFullStoryInstruction(self.system_name, self.files)
         block = {"type": "text", "text": self.system_prompt}
         if self.provider.cacheControl():
             block["cache_control"] = self.provider.cacheControl()
@@ -45,30 +46,16 @@ class Narrator:
         self.provider.recompute_usage_from_messages(self.provider.messages)
 
     # === Per-turn file snapshots ===========================================
-    # File state is a function of the active node. Each assistant turn records the full contents
-    # of the files it changed (a delta); a node's full state is reconstructed by replaying deltas
-    # root→node (TurnTree.file_state_at). Story files live in the story dir and are materialized
-    # back to disk on rollback/branch-switch. The shared instruction files (core.md, {system}.md)
-    # are tracked too — keyed by their 'instructions/...' path so they never collide with story
-    # files — but never written back to disk (they are shared across stories); the live-read in
-    # _systemMessage handles them. They are assumed to exist for the whole history (missing = fatal).
+    # Story context (self.files) is a function of the active node. Each assistant turn records the
+    # full contents of the files it changed (a delta); a node's full state is reconstructed by
+    # replaying deltas root→node (TurnTree.file_state_at). self.files is the single source of truth:
+    # tools mutate it in place during a turn, and it is reset from the tree on every navigation.
+    # Shared instruction files (core.md, {system}.md) stay real files, live-read in _systemMessage.
 
-    def _instructionFiles(self) -> list[str]:
-        return ["instructions/core.md", f"instructions/{self.system_name}.md"]
-
-    def _snapshotDisk(self) -> dict[str, str]:
-        """Full contents of every tracked file: story .md files (keyed by bare name) plus the
-        shared instruction files (keyed by 'instructions/...')."""
-        snap: dict[str, str] = {}
-        story_dir = f"./stories/{self.story_id}"
-        for f in sorted(os.listdir(story_dir)):
-            if f.endswith(".md"):
-                with open(os.path.join(story_dir, f)) as fh:
-                    snap[f] = fh.read()
-        for path in self._instructionFiles():
-            with open(path) as fh:
-                snap[path] = fh.read()
-        return snap
+    def _setFiles(self, state: dict) -> None:
+        """Reset the in-memory story context in place (the toolbox holds the same dict reference)."""
+        self.files.clear()
+        self.files.update(state)
 
     @staticmethod
     def _diffFiles(before: dict, after: dict) -> dict:
@@ -77,31 +64,17 @@ class Narrator:
         delta.update({f: None for f in before if f not in after})
         return delta
 
-    def _writeStoryFiles(self, state: dict) -> None:
-        """Make the story dir's .md files exactly match the story-file portion of `state`
-        (instruction keys contain '/' and are ignored — they are never written to disk)."""
-        story_dir = f"./stories/{self.story_id}"
-        story_state = {k: v for k, v in state.items() if "/" not in k}
-        for f in [f for f in os.listdir(story_dir) if f.endswith(".md")]:
-            if f not in story_state:
-                os.remove(os.path.join(story_dir, f))
-        for f, contents in story_state.items():
-            with open(os.path.join(story_dir, f), "w") as fh:
-                fh.write(contents)
-
     def _restoreFor(self, base_id) -> dict:
-        """Rewind disk story files to base_id's state so an upcoming re-run reads the correct
-        branch. Returns the reconstructed state (the diff baseline). Legacy nodes carry no file
-        records → empty state → leave disk untouched (never wipe)."""
+        """Reset story context to base_id's state so an upcoming re-run reads the correct branch.
+        Returns the reconstructed state (the diff baseline)."""
         state = self.tree.file_state_at(base_id)
-        if state:
-            self._writeStoryFiles(state)
+        self._setFiles(state)
         return state
 
     def _materialize(self, node_id) -> None:
-        """Make the world match a node: restore its story files to disk, then rebuild context
-        (the live-read in _systemMessage picks up the restored files). Used by pure-navigation
-        ops (branch-switch, rollback) that don't re-run the model."""
+        """Make the world match a node: restore its story context, then rebuild context (the
+        live-read in _systemMessage picks up the restored files). Used by pure-navigation ops
+        (branch-switch, rollback) that don't re-run the model."""
         self._restoreFor(node_id)
         self._rebuildContext()
 
@@ -120,12 +93,16 @@ class Narrator:
             self.tree = TurnTree.migrate_from_flat(data["messages"])
         else:
             return None
+        self._setFiles(self.tree.file_state_at(self.tree.current_leaf))
         self._rebuildContext()
         return self.tree
 
     def clearMessages(self):
-        """Reset to an empty tree. Used after summarization."""
+        """Reset to a fresh tree after summarization. Carry the current story context forward as a
+        hidden synthetic root (empty messages + files delta) so it survives into the new conversation."""
         self.tree = TurnTree.empty()
+        if self.files:
+            self.tree.add_node(None, "user", [], files=dict(self.files))
         self._rebuildContext()
 
     def _emitHistory(self):
@@ -134,15 +111,16 @@ class Narrator:
     def _runIntoTurn(self, parent_id, before=None):
         """Run the model, then capture the [user, assistant...] messages just produced
         as a user node + an assistant-node child. The assistant node records the files that
-        changed this turn (diff of the parent's reconstructed state vs disk after the run).
+        changed this turn (diff of the parent's reconstructed state vs self.files after the run).
         Returns the new assistant node id."""
         if before is None:
             before = self.tree.file_state_at(parent_id)
+        self._setFiles(before)  # working copy the tools mutate this turn
         # the user message is already the last entry; capture from there after the run
         user_start = len(self.provider.messages) - 1
         self.provider.run()
         new = self.provider.messages[user_start:]
-        delta = self._diffFiles(before, self._snapshotDisk())
+        delta = self._diffFiles(before, self.files)
         u = self.tree.add_node(parent_id, "user", new[:1])
         return self.tree.add_node(u, "assistant", new[1:], files=delta)
 
@@ -154,7 +132,9 @@ class Narrator:
             self.socket.emit('previous_history', frontend_previous)
 
         history = self.loadMessages()
-        if history is not None:
+        # A tree with no actual turns (e.g. a copy-without-history or post-summarization story whose
+        # only node is the hidden synthetic root carrying the story context) is empty to the player.
+        if history is not None and self.tree.active_messages():
             self.saveMessages()  # persist migration / live system prompt
             self._emitHistory()
         elif not previous_messages:
@@ -272,12 +252,12 @@ class Narrator:
         if not node or node["role"] != "assistant":
             return
         parent = node["parent"]  # the user node this responds to
-        before = self._restoreFor(parent)  # rewind story files so the re-run reads the right branch
+        before = self._restoreFor(parent)  # reset story context so the re-run reads the right branch
         self.provider.messages = [self._systemMessage()] + self.tree.messages_to(parent)
         self.provider.recompute_usage_from_messages(self.provider.messages)
         n = len(self.provider.messages)
         self.provider.run()
-        delta = self._diffFiles(before, self._snapshotDisk())
+        delta = self._diffFiles(before, self.files)
         self.tree.add_node(parent, "assistant", self.provider.messages[n:], files=delta)
         self._rebuildContext()
         self.saveMessages()
@@ -288,7 +268,7 @@ class Narrator:
         if not node or node["role"] != "user":
             return
         grandparent = node["parent"]  # the assistant node before it (or None)
-        before = self._restoreFor(grandparent)  # rewind story files so the re-run reads the right branch
+        before = self._restoreFor(grandparent)  # reset story context so the re-run reads the right branch
         self.provider.messages = [self._systemMessage()] + self.tree.messages_to(grandparent)
         self.provider.addUserMessage(new_content)
         self.provider.recompute_usage_from_messages(self.provider.messages)
@@ -321,6 +301,23 @@ class Narrator:
             return
         self.tree.current_leaf = node_id
         self._finishNav()
+
+    def fork_to(self, node_id: str, new_name: str) -> str | None:
+        """Fork into a fresh story whose history is the linear path root→node_id. The story context
+        rides along inside the copied node deltas. The source story is untouched. Returns the new id."""
+        node = self.tree.nodes.get(node_id)
+        if not node or node["role"] != "assistant" or not new_name:
+            return None
+        new_id = makeNewStoryDir(new_name, self.system_name, self.model_name)
+        path = self.tree.path_to(node_id)
+        nodes = []  # copy each node on the path, trimming children to just the next path node
+        for i, nid in enumerate(path):
+            n = dict(self.tree.nodes[nid])
+            n["children"] = [path[i + 1]] if i + 1 < len(path) else []
+            nodes.append(n)
+        with open(f"./stories/{new_id}/history.json", "w") as f:
+            json.dump({"model_name": self.model_name, "system_name": self.system_name, "current_leaf": node_id, "nodes": nodes}, f, indent=4)
+        return new_id
 
     def __str__(self) -> str:
         return f"Narrator(model_name={self.model_name}, system={self.system_name}, tools=Toolbox[{len(self.tb.tools)}])"

@@ -1,4 +1,3 @@
-import os
 import random
 import json
 import inspect
@@ -43,6 +42,8 @@ class Tool:
         self.description = handler_props['description']
         self.handler = handler
         self.arg_properties = handler_props['arg_properties']
+        sig = inspect.signature(handler)
+        required = [name for name in self.arg_properties if sig.parameters[name].default is inspect.Parameter.empty]
         self.schema = {
             "type": "function",
             "function": {
@@ -51,7 +52,7 @@ class Tool:
                 "parameters": {
                     "type": "object",
                     "properties": self.arg_properties,
-                    "required": [key for key in self.arg_properties.keys()],
+                    "required": required,
                 },
             }
         }
@@ -102,44 +103,37 @@ class Toolbox:
 ############## story tools ################
 
 def list_story_files_tool_handler(**kwargs) -> list[str]:
-    """list_files: Lists all files in the current story directory.
+    """list_files: Lists all files in the current story context.
     """
-    files = [f for f in os.listdir(f"./stories/{kwargs['story_id']}") if f.endswith(".md")]
-    return files
+    return list(kwargs['files'].keys())
 
 def read_story_file_tool_handler(file_name: str, **kwargs) -> str:
-    """read_file: Read the contents of a file in the current story directory.
-    file_name (string): Name of the file to be read. Should include the file extension, and not include any parent folders or subfolders.
+    """read_file: Read the contents of a file in the current story context.
+    file_name (string): Name of the file to be read, with no file extension and no subfolders.
     """
-    with open(f"./stories/{kwargs['story_id']}/{file_name}", 'r') as file:
-        content = file.read()
-    return content
+    return kwargs['files'][file_name]
 
 def write_story_file_tool_handler(file_name: str, contents: str, **kwargs) -> str:
-    """write_file: Create or overwrite a file in the current story directory with the given name and contents. The contents of the file, if it exists, will be deleted permanently. If editing a file, you should read the file first, then write the edited or extended version after.
-    file_name (string): Name of the file to save to. Should be a markdown file, ending in '.md'. Should not be a part of any subfolder.
+    """write_file: Create or overwrite a file in the current story context with the given name and contents. The contents of the file, if it exists, will be deleted permanently. If editing a file, you should read the file first, then write the edited or extended version after.
+    file_name (string): Name of the file to save to, with no file extension and no subfolders.
     contents (string): The contents to write to the file. Do not include backticks around the contents to be saved.
     """
-    if not file_name.endswith(".md"):
-        file_name += ".md"
-    exists = os.path.exists(f"./stories/{kwargs['story_id']}/{file_name}")
-    with open(f"./stories/{kwargs['story_id']}/{file_name}", 'w') as file:
-        file.write(contents)
-    if exists: return "File edited successfully."
-    else: return "File saved successfully."
+    file_name = file_name
+    files = kwargs['files']
+    exists = file_name in files
+    files[file_name] = contents
+    return "File edited successfully." if exists else "File saved successfully."
 
 def append_story_file_tool_handler(file_name: str, contents: str, **kwargs) -> str:
-    """append_file: Append contents to the end of an existing file in the current story directory. If the file doesn't exist, it will be created.
-    file_name (string): Name of the file to append to. Should be a markdown file, ending in '.md'. Should not be a part of any subfolder.
+    """append_file: Append contents to the end of an existing file in the current story context. If the file doesn't exist, it will be created.
+    file_name (string): Name of the file to append to, with no file extension and no subfolders.
     contents (string): The contents to append to the file. Do not include backticks around the contents to be appended.
     """
-    if not file_name.endswith(".md"):
-        file_name += ".md"
-    exists = os.path.exists(f"./stories/{kwargs['story_id']}/{file_name}")
-    with open(f"./stories/{kwargs['story_id']}/{file_name}", 'a') as file:
-        file.write("\n" + contents)
-    if exists: return "Contents appended to file successfully."
-    else: return "File created and contents added successfully."
+    file_name = file_name
+    files = kwargs['files']
+    exists = file_name in files
+    files[file_name] = files[file_name] + "\n" + contents if exists else contents
+    return "Contents appended to file successfully." if exists else "File created and contents added successfully."
 
 def roll_dice_tool_handler(dice: str, **kwargs) -> int:
     """roll_dice: Roll a set of dice with the given number of sides and return the sum of the rolls.
@@ -167,6 +161,23 @@ def roll_dice_tool_handler(dice: str, **kwargs) -> int:
     rolls = [random.randint(1, sides) for _ in range(num)]
     return sum(rolls)
 
+def dnd_dice_tool_handler(sides: int, count: int = 1, multiplier: int = 1, bonus: int = 0, advantage: bool = False, desc: str = "", **kwargs) -> int:
+    """dnd_dice: Roll dice for a D&D 5e check, attack, or damage. Rolls `count` dice of `sides` sides, multiplies the sum by `multiplier`, then adds `bonus`. Returns the final total.
+    sides (integer): Number of sides on each die. E.g. 20 for a d20, 8 for a d8.
+    count (integer): How many dice to roll. Defaults to 1.
+    multiplier (integer): Multiplies the summed dice before the bonus is added (e.g. 2 for a critical hit). Defaults to 1.
+    bonus (integer): Flat modifier added after multiplying (ability modifier + proficiency, etc.). Defaults to 0.
+    advantage (boolean): If true, roll the whole dice set twice and keep the higher sum before applying multiplier and bonus. Defaults to false.
+    desc (string): Short label for what the roll is for, e.g. 'Elara longsword attack'. Defaults to empty.
+    """
+    if sides < 1:
+        raise ValueError("Number of sides must be greater than 0.")
+    if count < 1:
+        raise ValueError("Number of dice must be greater than 0.")
+    roll_set = lambda: sum(random.randint(1, sides) for _ in range(count))
+    total = max(roll_set(), roll_set()) if advantage else roll_set()
+    return total * multiplier + bonus
+
 
 ############## system toolboxes ################
 
@@ -175,20 +186,19 @@ BASE_HANDLERS = [
     read_story_file_tool_handler,
     write_story_file_tool_handler,
     append_story_file_tool_handler,
-    roll_dice_tool_handler,
 ]
 
-def _make_toolbox(story_id: str, system_name: str, extra_handlers: list[Callable] = []) -> Toolbox:
-    return Toolbox(BASE_HANDLERS + extra_handlers, default_kwargs={"story_id": story_id, "system_name": system_name})
+def _make_toolbox(files: dict[str, str], extra_handlers: list[Callable] = []) -> Toolbox:
+    return Toolbox(BASE_HANDLERS + extra_handlers, default_kwargs={"files": files})
 
-def hp_toolbox(story_id: str, system_name: str) -> Toolbox:
-    return _make_toolbox(story_id, system_name)
+def hp_toolbox(files: dict[str, str]) -> Toolbox:
+    return _make_toolbox(files, [roll_dice_tool_handler])
 
-def dnd5e_toolbox(story_id: str, system_name: str) -> Toolbox:
-    return _make_toolbox(story_id, system_name)
+def dnd5e_toolbox(files: dict[str, str]) -> Toolbox:
+    return _make_toolbox(files, [dnd_dice_tool_handler])
 
-def twd_toolbox(story_id: str, system_name: str) -> Toolbox:
-    return _make_toolbox(story_id, system_name)
+def twd_toolbox(files: dict[str, str]) -> Toolbox:
+    return _make_toolbox(files, [roll_dice_tool_handler])
 
 SYSTEM_TOOLBOXES: dict[str, Callable] = {
     "hp": hp_toolbox,
