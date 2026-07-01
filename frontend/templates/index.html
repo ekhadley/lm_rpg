@@ -38,7 +38,7 @@
             </div>
             <ul class="story-list" id="story-list">
                 {% for story in stories %}
-                <li class="story-item {% if session.get('story') == story.id %}active{% endif %}" data-story="{{ story.id }}">
+                <li class="story-item {% if session.get('story') == story.id %}active{% endif %}" data-story="{{ story.id }}"{% if story.model %} data-model="{{ story.model }}"{% endif %}>
                     {% if story.system == 'hp' %}<span class="hp-logo-icon" title="{{ story.system }}"></span>{% elif story.system == 'twd' %}<span class="twd-logo-icon" title="{{ story.system }}"></span>{% else %}<i class="{% if story.system == 'dnd5e' %}fab fa-d-and-d{% else %}fas fa-scroll{% endif %}" title="{{ story.system }}"></i>{% endif %}
                     <div class="story-item-content">
                         <div class="story-name-row">
@@ -201,15 +201,14 @@
     </div>
 
     <!-- Create Story Modal -->
-    <div id="create-story-modal" class="modal-overlay">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5>Create New Story</h5>
-                <button class="modal-close" id="create-story-modal-close">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
+    <div id="create-story-modal" class="side-popup">
+        <div class="modal-header">
+            <h5>Create New Story</h5>
+            <button class="modal-close" id="create-story-modal-close">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
                 <div class="form-group">
                     <label for="new_story_name">Story Name</label>
                     <input 
@@ -220,12 +219,12 @@
                         required
                     >
                 </div>
-                <div class="form-group">
-                    <label class="select-label">System</label>
+                <div class="form-group inline-field">
+                    <label class="select-label">System:</label>
                     <div class="custom-select-wrapper">
                         <div class="custom-select" id="create-system-select-custom" tabindex="0">
                             <span class="custom-select-value">hp</span>
-                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                            <i class="fas fa-chevron-right custom-select-arrow"></i>
                         </div>
                         <select id="create-system-select" class="system-select" style="display: none;">
                             {% for system in systems %}
@@ -239,12 +238,12 @@
                         </div>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label class="select-label">Model</label>
+                <div class="form-group inline-field">
+                    <label class="select-label">Model:</label>
                     <div class="custom-select-wrapper">
                         <div class="custom-select" id="create-model-select-custom" tabindex="0">
                             <span class="custom-select-value">{{ models[0] }}</span>
-                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                            <i class="fas fa-chevron-right custom-select-arrow"></i>
                         </div>
                         <select id="create-model-select" class="model-select" style="display: none;">
                             {% for model in models %}
@@ -259,10 +258,9 @@
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="create-story-modal-cancel">Cancel</button>
-                <button class="btn btn-primary" id="create-story-btn">Create</button>
-            </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" id="create-story-modal-cancel">Cancel</button>
+            <button class="btn btn-primary" id="create-story-btn">Create</button>
         </div>
     </div>
 
@@ -281,7 +279,7 @@
                     <div class="custom-select-wrapper">
                         <div class="custom-select" id="cache-mode-select-custom" tabindex="0">
                             <span class="custom-select-value">1 hour cache</span>
-                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                            <i class="fas fa-chevron-right custom-select-arrow"></i>
                         </div>
                         <select id="cache-mode-select" style="display: none;">
                             <option value="none">No caching</option>
@@ -352,7 +350,7 @@
                     <div class="custom-select-wrapper">
                         <div class="custom-select" id="select-story-system-select-custom" tabindex="0">
                             <span class="custom-select-value">hp</span>
-                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                            <i class="fas fa-chevron-right custom-select-arrow"></i>
                         </div>
                         <select id="select-story-system-select" class="system-select" style="display: none;">
                             {% for system in systems %}
@@ -371,7 +369,7 @@
                     <div class="custom-select-wrapper">
                         <div class="custom-select" id="select-story-model-select-custom" tabindex="0">
                             <span class="custom-select-value">{{ models[0] }}</span>
-                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                            <i class="fas fa-chevron-right custom-select-arrow"></i>
                         </div>
                         <select id="select-story-model-select" class="model-select" style="display: none;">
                             {% for model in models %}
@@ -406,12 +404,12 @@
                 <label for="copy_story_name">New Story Name</label>
                 <input type="text" id="copy_story_name" class="form-control" placeholder="Enter new story name" required>
             </div>
-            <div class="form-group">
-                <label class="select-label">Model</label>
+            <div class="form-group inline-field">
+                <label class="select-label">Model:</label>
                 <div class="custom-select-wrapper">
                     <div class="custom-select" id="copy-story-model-select-custom" tabindex="0">
                         <span class="custom-select-value">{{ models[0] }}</span>
-                        <i class="fas fa-chevron-down custom-select-arrow"></i>
+                        <i class="fas fa-chevron-right custom-select-arrow"></i>
                     </div>
                     <select id="copy-story-model-select" class="model-select" style="display: none;">
                         {% for model in models %}
@@ -459,13 +457,18 @@
         <div class="file-viewer-content">
             <div class="file-viewer-header">
                 <h5 id="file-viewer-title"></h5>
-                <button class="modal-close" id="file-viewer-close">
-                    <i class="fas fa-times"></i>
-                </button>
+                <div class="file-viewer-header-actions">
+                    <button class="btn btn-secondary" id="file-viewer-toggle">Raw</button>
+                    <button class="btn btn-secondary" id="file-viewer-save">Save</button>
+                    <button class="modal-close" id="file-viewer-close">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
             </div>
             <div class="file-viewer-main">
                 <nav class="file-viewer-toc" id="file-viewer-toc"></nav>
                 <div class="file-viewer-body" id="file-viewer-body"></div>
+                <textarea class="file-viewer-editor" id="file-viewer-editor" spellcheck="false"></textarea>
             </div>
         </div>
     </div>

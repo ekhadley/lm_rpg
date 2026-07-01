@@ -9,7 +9,7 @@ from utils import (
     logger, listStoryIds, loadStoryInfo, makeNewStoryDir,
     historyExists, isValidGameSystem, listGameSystemNames,
     archiveHistory, copyStory, archiveStoryDir, renameStory,
-    loadAllPreviousHistory,
+    loadAllPreviousHistory, resolveInstructionFile,
 )
 
 app = Flask(__name__, template_folder="frontend/templates", static_folder="frontend/static")
@@ -24,6 +24,7 @@ models = [
     "anthropic/claude-opus-4.8",
     "anthropic/claude-haiku-4.5",
     "openai/gpt-5.5",
+    "openai/gpt-5.5-pro",
     "openai/gpt-4o-mini",
     "google/gemini-3.1-pro-preview",
     "google/gemini-3.5-flash",
@@ -193,8 +194,8 @@ def get_system_instructions():
     if narrator is None:
         emit('error', {"message": "No story selected"})
         return
-    filepath = f"./instructions/{narrator.system_name}.md"
-    if not os.path.exists(filepath):
+    filepath = resolveInstructionFile(narrator.system_name)
+    if filepath is None:
         emit('error', {"message": "System instructions not found"})
         return
     with open(filepath, 'r') as f:
@@ -211,7 +212,20 @@ def get_story_file(data: dict[str, str]):
     if filename not in narrator.files:
         emit('error', {"message": f"File not found: {filename}"})
         return
-    emit('story_file_content', {"filename": filename, "content": narrator.files[filename]})
+    emit('story_file_content', {"filename": filename, "content": narrator.files[filename], "editable": True})
+
+@socket.on('save_story_file')
+def save_story_file(data: dict[str, str]):
+    global narrator
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
+    filename = data.get('filename', '')
+    if filename not in narrator.files:
+        emit('error', {"message": f"File not found: {filename}"})
+        return
+    narrator.editFile(filename, data.get('content', ''))
+    emit('story_file_saved', {"filename": filename})
 
 @socket.on('get_debug_messages')
 def get_debug_messages():

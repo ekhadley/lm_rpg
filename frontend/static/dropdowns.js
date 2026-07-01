@@ -28,17 +28,11 @@ export function initCustomDropdown(customSelect, dropdown, nativeSelect) {
         }
     }
 
-    function toggleDropdown() {
+    function openDropdown() {
         if (nativeSelect.disabled) return;
-
-        isOpen = !isOpen;
-        if (isOpen) {
-            customSelect.classList.add('active');
-            dropdown.classList.add('show');
-        } else {
-            customSelect.classList.remove('active');
-            dropdown.classList.remove('show');
-        }
+        isOpen = true;
+        customSelect.classList.add('active');
+        dropdown.classList.add('show');
     }
 
     function closeDropdown() {
@@ -47,15 +41,20 @@ export function initCustomDropdown(customSelect, dropdown, nativeSelect) {
         dropdown.classList.remove('show');
     }
 
-    customSelect.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleDropdown();
-    });
+    // Open on hover; a short close delay lets the cursor cross the gap to the menu without it snapping shut.
+    let closeTimer = null;
+    const scheduleClose = () => { closeTimer = setTimeout(closeDropdown, 150); };
+    const cancelClose = () => { clearTimeout(closeTimer); };
+
+    customSelect.addEventListener('mouseenter', () => { cancelClose(); openDropdown(); });
+    customSelect.addEventListener('mouseleave', scheduleClose);
+    dropdown.addEventListener('mouseenter', cancelClose);
+    dropdown.addEventListener('mouseleave', scheduleClose);
 
     customSelect.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            toggleDropdown();
+            isOpen ? closeDropdown() : openDropdown();
         } else if (e.key === 'Escape') {
             closeDropdown();
         }

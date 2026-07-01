@@ -105,6 +105,15 @@ class Narrator:
             self.tree.add_node(None, "user", [], files=dict(self.files))
         self._rebuildContext()
 
+    def editFile(self, filename: str, content: str) -> None:
+        """Persist a manual edit to a story-context entry by folding it into the current leaf's files delta."""
+        self.files[filename] = content
+        leaf = self.tree.current_leaf  # always set: an entry can only exist in self.files if the tree has nodes
+        before = self.tree.file_state_at(self.tree.nodes[leaf]["parent"])
+        self.tree.nodes[leaf]["files"] = self._diffFiles(before, self.files)
+        self._rebuildContext()  # so the next turn's system prompt reflects the edit
+        self.saveMessages()
+
     def _emitHistory(self):
         self.socket.emit('conversation_history', self._transformTreeForFrontend())
 
@@ -146,7 +155,9 @@ class Narrator:
         """Kick off a brand-new story (triggered by the frontend's Start Story button)."""
         self._rebuildContext()  # seed [system]; the provider no longer holds a system message of its own
         self.provider.addUserMessage("System: start of story")
-        self._runIntoTurn(None)
+        # Parent on the existing leaf (the hidden synthetic root of a copied/summarized story carries
+        # the seeded story context); None only for a genuinely fresh tree.
+        self._runIntoTurn(self.tree.current_leaf)
         self._rebuildContext()
         self.saveMessages()
         self._emitHistory()

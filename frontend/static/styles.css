@@ -34,6 +34,7 @@
     --color-thinking: #7b8aff;
     --color-dice: #5fd4a0;
     --color-tools: #ffbe3d;
+    --btn-transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease, opacity 0.1s ease, transform 0.1s ease;
 }
 
 /* Gruvbox Dark Theme */
@@ -407,7 +408,7 @@ body {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
+    transition: var(--btn-transition);
     font-size: 1rem;
 }
 
@@ -435,7 +436,7 @@ body {
     visibility: hidden;
     pointer-events: none;
     transform: translateY(4px);
-    transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
+    transition: opacity 0.07s ease, transform 0.07s ease, visibility 0.07s ease;
 }
 
 .theme-picker.visible {
@@ -567,7 +568,7 @@ body {
     border-radius: 8px;
     width: 90%;
     max-width: 875px;
-    max-height: 80vh;
+    height: 80vh;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     display: flex;
     flex-direction: column;
@@ -587,6 +588,41 @@ body {
     color: var(--text-bright);
     font-size: 1rem;
     font-weight: 600;
+}
+
+.file-viewer-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* .btn.btn-secondary, shrunk to fit the header (extra specificity to outrank the later .btn rules) */
+.file-viewer-header-actions .btn {
+    padding: 4px 12px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.file-viewer-header-actions .btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.file-viewer-editor {
+    flex: 1;
+    min-height: 0;
+    padding: 20px 24px;
+    border: none;
+    resize: none;
+    background: var(--bg-deep);
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.file-viewer-editor:focus {
+    outline: none;
 }
 
 .file-viewer-main {
@@ -653,7 +689,7 @@ body {
     transform: translateY(-50%);
     font-size: 0.7rem;
     opacity: 0.5;
-    transition: transform 0.15s ease, opacity 0.15s ease;
+    transition: transform 0.08s ease, opacity 0.08s ease;
 }
 
 .file-viewer-toc a:hover .toc-chevron {
@@ -1103,7 +1139,6 @@ body {
     display: inline-flex;
     margin-left: 0.5em;
     opacity: 0;
-    transition: opacity 0.2s ease;
     vertical-align: middle;
 }
 
@@ -1125,7 +1160,7 @@ body {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
+    transition: var(--btn-transition);
     font-size: 0.75rem;
 }
 
@@ -1154,7 +1189,7 @@ body {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
+    transition: var(--btn-transition);
     font-size: 0.75rem;
 }
 
@@ -1185,7 +1220,7 @@ body {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
+    transition: var(--btn-transition);
 }
 
 .branch-arrow:hover {
@@ -1243,7 +1278,7 @@ body {
     justify-content: center;
     cursor: pointer;
     font-size: 0.85rem;
-    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
+    transition: var(--btn-transition);
 }
 
 .edit-save-btn {
@@ -1425,7 +1460,7 @@ body {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
+    transition: var(--btn-transition);
     opacity: 0.4;
     z-index: 100;
 }
@@ -1708,7 +1743,7 @@ body {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.08s ease;
     overflow: hidden;
 }
 
@@ -1762,7 +1797,7 @@ body {
     font-size: 0.8rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
+    transition: var(--btn-transition);
     font-family: var(--font-primary);
 }
 
@@ -1809,7 +1844,7 @@ body {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    transition: opacity 0.2s ease, visibility 0.2s ease;
+    transition: opacity 0.08s ease, visibility 0.08s ease;
 }
 
 .cost-popup.visible {
@@ -1908,7 +1943,7 @@ html, body {
     border-radius: 20px;
     padding: 6px 8px 6px 8px;
     border: 1px solid var(--border);
-    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
+    transition: var(--btn-transition);
     position: relative;
     overflow: visible;
 }
@@ -1994,7 +2029,7 @@ html, body {
 }
 
 .custom-select.active .custom-select-arrow {
-    transform: rotate(180deg);
+    transform: translateX(2px);
     color: var(--accent);
 }
 
@@ -2014,7 +2049,7 @@ html, body {
     display: none;
     opacity: 0;
     transform: translateY(-8px);
-    transition: opacity 0.2s ease, transform 0.2s ease;
+    transition: opacity 0.08s ease, transform 0.08s ease;
 }
 
 .custom-select-dropdown.show {
@@ -2135,7 +2170,6 @@ html, body {
     margin: 0;
     border-radius: 4px;
     opacity: 0;
-    transition: opacity 0.2s ease;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2235,7 +2269,7 @@ html, body {
     align-items: center;
     justify-content: center;
     opacity: 0;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.1s ease;
 }
 
 .modal-overlay.show {
@@ -2265,6 +2299,19 @@ html, body {
 .side-popup .modal-body { padding: 14px; }
 .side-popup .form-group { margin-bottom: 14px; }
 .side-popup .form-group label { margin-bottom: 6px; }
+
+/* label sits on the same row as its control instead of stacked above it */
+.form-group.inline-field {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+}
+.form-group.inline-field > label {
+    margin-bottom: 0;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
 .side-popup .modal-footer { padding: 10px 14px 14px; gap: 8px; justify-content: center; }
 .side-popup .modal-footer .btn {
     padding: 6px 18px;
@@ -2308,12 +2355,16 @@ html, body {
     transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
+.custom-checkbox:hover .checkmark {
+    border-color: var(--accent);
+}
+
 .custom-checkbox input:checked + .checkmark {
     background: var(--accent);
     border-color: var(--accent);
 }
 
-.custom-checkbox input:checked + .checkmark::after {
+.custom-checkbox .checkmark::after {
     content: '';
     position: absolute;
     left: 5px;
@@ -2322,7 +2373,12 @@ html, body {
     height: 9px;
     border: solid white;
     border-width: 0 2px 2px 0;
-    transform: rotate(45deg);
+    transform: rotate(45deg) scale(0);
+    transition: transform 0.15s ease;
+}
+
+.custom-checkbox input:checked + .checkmark::after {
+    transform: rotate(45deg) scale(1);
 }
 
 /* Scoped under .modal-overlay to outrank Bootstrap's .modal-content/.modal-header/etc.
@@ -2424,7 +2480,7 @@ html, body {
     font-size: 0.9rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
+    transition: var(--btn-transition);
 }
 
 .btn:active {
@@ -2473,6 +2529,17 @@ html, body {
 
 .modal-body .custom-select-dropdown {
     z-index: 2001;
+    /* fan out to the right (branching-menu style) instead of dropping down, so every option shows at once */
+    top: 0;
+    /* clear the modal-body padding (14px) + a gap so the menu sits beside the popup, not overlapping its edge */
+    left: calc(100% + 22px);
+    max-height: none;
+    overflow: visible;
+    transform: translateX(-8px);
+}
+
+.modal-body .custom-select-dropdown.show {
+    transform: translateX(0);
 }
 
 /* Confirm Popup */

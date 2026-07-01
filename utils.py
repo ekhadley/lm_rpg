@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import uuid
 import shutil
@@ -64,17 +65,34 @@ INSTRUCTIONS_DIR = "instructions"
 def listStoryIds() -> list[str]:
     return sorted(f for f in os.listdir("./stories") if not f.startswith('.'))
 
+def resolveInstructionFile(base: str) -> str | None:
+    """Path of the instruction file to load for a base name (e.g. 'core', 'hp').
+
+    A numberless file (`core.md`) wins if present. Otherwise the highest-numbered
+    versioned file (`core0.md`, `core1.md`, ...) is used. Returns None if neither exists.
+    """
+    plain = f"{INSTRUCTIONS_DIR}/{base}.md"
+    if os.path.exists(plain):
+        return plain
+    pattern = re.compile(rf"^{re.escape(base)}(\d+)\.md$")
+    best = None
+    for name in os.listdir(INSTRUCTIONS_DIR):
+        m = pattern.match(name)
+        if m and (best is None or int(m.group(1)) > best[0]):
+            best = (int(m.group(1)), name)
+    return f"{INSTRUCTIONS_DIR}/{best[1]}" if best else None
+
 def _system_has_instructions(system_name: str) -> bool:
-    """Returns True only if the system has an instructions file."""
-    return os.path.exists(f"{INSTRUCTIONS_DIR}/{system_name}.md")
+    """Returns True only if the system has an instructions file (any version)."""
+    return resolveInstructionFile(system_name) is not None
 
 def isValidGameSystem(system_name: str) -> bool:
     """Public validator to ensure the requested system has the required assets."""
     return _system_has_instructions(system_name)
 
 def listGameSystemNames() -> list[str]:
-    """Only return systems that are actually usable (have instructions)."""
-    return sorted(os.listdir(INSTRUCTIONS_DIR))
+    """Distinct system base names backed by an instruction file (versions collapsed)."""
+    return sorted({re.sub(r"\d*\.md$", "", f) for f in os.listdir(INSTRUCTIONS_DIR) if f.endswith(".md") and not f.startswith("_")})
 
 def makeNewStoryDir(display_name: str, system: str, model_name: str) -> str:
     """Create a new story directory (named by a fresh uuid) and return its id."""
@@ -144,12 +162,12 @@ def getFullStoryInstruction(system_name: str, files: dict[str, str]) -> str:
     result_parts = []
 
     # Load core instructions (required, shared across all systems)
-    with open(f"{INSTRUCTIONS_DIR}/core.md", 'r') as f:
+    with open(resolveInstructionFile("core"), 'r') as f:
         core_instructions = f.read()
     result_parts.append(f"<core_instructions>\n{core_instructions}\n</core_instructions>")
 
     # Load system-specific instructions (required)
-    with open(f"{INSTRUCTIONS_DIR}/{system_name}.md", 'r') as f:
+    with open(resolveInstructionFile(system_name), 'r') as f:
         system_instructions = f.read()
     result_parts.append(f"<system_instructions>\n{system_instructions}\n</system_instructions>")
 

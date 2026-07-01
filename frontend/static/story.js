@@ -20,8 +20,12 @@ import {
     pendingStoryName, setPendingStoryName,
     fileList, rightSidebar,
     fileViewerOverlay, fileViewerTitle, fileViewerBody, fileViewerToc, fileViewerClose,
+    fileViewerToggle, fileViewerSave, fileViewerEditor,
 } from './state.js';
 import { showTypingIndicator, showConfirmPopup, positionPopupNear } from './ui.js';
+
+// Currently-open file in the viewer (for the raw/rendered toggle + editing).
+let currentFile = null, currentContent = '', rawMode = false;
 
 export function addStoryFileToSidebar(filename) {
     if (!fileList || !filename) return;
@@ -90,6 +94,7 @@ export function addNewStory(story) {
     const li = document.createElement('li');
     li.className = 'story-item';
     li.setAttribute('data-story', story.id);
+    if (story.model) li.setAttribute('data-model', story.model);
 
     let icon;
     const system = story.system || 'unknown';
@@ -186,7 +191,7 @@ export function initStory() {
 
     // New Story button opens create modal
     if (newStoryBtn) {
-        newStoryBtn.addEventListener('click', () => createStoryModal && createStoryModal.classList.add('show'));
+        newStoryBtn.addEventListener('click', (e) => { e.stopPropagation(); if (createStoryModal) positionPopupNear(createStoryModal, newStoryBtn); });
     }
 
     // Story list click handler
@@ -225,6 +230,11 @@ export function initStory() {
                 menuItem.closest('.story-context-menu').classList.remove('show');
                 if (copyStoryModal) {
                     if (copyStoryNameInput) copyStoryNameInput.value = displayName + ' (copy)';
+                    const storyModel = storyItem.getAttribute('data-model');
+                    if (copyStoryModelSelect && storyModel && copyStoryModelSelect.querySelector('option[value="' + CSS.escape(storyModel) + '"]')) {
+                        copyStoryModelSelect.value = storyModel;
+                        copyStoryModelSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
                     positionPopupNear(copyStoryModal, storyItem);
                 }
                 return;
@@ -273,6 +283,7 @@ export function initStory() {
                     if (item.getAttribute('data-story') === pendingStoryName) {
                         const modelSpan = item.querySelector('.story-meta');
                         if (modelSpan) modelSpan.textContent = stripProvider(modelName);
+                        item.setAttribute('data-model', modelName);
                     }
                 });
             }
@@ -338,15 +349,16 @@ export function initStory() {
     // Create modal close/cancel
     if (createStoryModalClose) createStoryModalClose.addEventListener('click', () => createStoryModal && createStoryModal.classList.remove('show'));
     if (createStoryModalCancel) createStoryModalCancel.addEventListener('click', () => createStoryModal && createStoryModal.classList.remove('show'));
+    // Close side popups on outside click (their open triggers stopPropagation, so the opening click never lands here)
+    document.addEventListener('click', function(e) {
+        for (const modal of [createStoryModal, copyStoryModal]) {
+            if (modal && modal.classList.contains('show') && !modal.contains(e.target)) modal.classList.remove('show');
+        }
+    });
 
     // Copy story modal handlers
     if (copyStoryModalClose) copyStoryModalClose.addEventListener('click', closeCopyStoryModal);
     if (copyStoryModalCancel) copyStoryModalCancel.addEventListener('click', closeCopyStoryModal);
-    if (copyStoryModal) {
-        document.addEventListener('click', function(e) {
-            if (copyStoryModal.classList.contains('show') && !copyStoryModal.contains(e.target)) closeCopyStoryModal();
-        });
-    }
     if (copyStoryBtn) {
         copyStoryBtn.addEventListener('click', function() {
             const newName = copyStoryNameInput ? copyStoryNameInput.value.trim() : '';
@@ -406,9 +418,10 @@ export function initStory() {
         console.log('Story locked with data:', data);
         if (currentStory && storyList) {
             storyList.querySelectorAll('.story-item').forEach(item => {
-                if (item.getAttribute('data-story') === currentStory) {
+                if (item.getAttribute('data-story') === currentStory && data.model_name) {
                     const modelSpan = item.querySelector('.story-meta');
-                    if (modelSpan && data.model_name) modelSpan.textContent = stripProvider(data.model_name);
+                    if (modelSpan) modelSpan.textContent = stripProvider(data.model_name);
+                    item.setAttribute('data-model', data.model_name);
                 }
             });
         }
@@ -442,101 +455,152 @@ export function initStory() {
     // File viewer response
     socket.on('story_file_content', function(data) {
         if (!fileViewerOverlay) return;
+        currentFile = data.filename;
+        currentContent = data.content;
         fileViewerTitle.textContent = data.filename;
-        fileViewerBody.innerHTML = marked.parse(data.content);
+        fileViewerToggle.style.display = data.editable ? '' : 'none';
+        setRawMode(false);
+        fileViewerOverlay.classList.add('show');
+    });
+
+    // Raw mode shows the editable textarea (+ Save button); rendered mode shows the markdown + TOC.
+    function setRawMode(raw) {
+        rawMode = raw;
+        fileViewerToggle.textContent = raw ? 'Rendered' : 'Raw';
+        fileViewerSave.style.display = raw ? '' : 'none';
+        if (raw) renderRaw(currentContent); else renderFile(currentContent);
+    }
+
+    function renderFile(content) {
+        fileViewerEditor.style.display = 'none';
+        fileViewerBody.style.display = '';
+        fileViewerToc.style.display = '';
+        fileViewerBody.innerHTML = marked.parse(content);
 
         // Build TOC from rendered headings
-        if (fileViewerToc) {
-            fileViewerToc.innerHTML = '';
-            // Add resize handle
-            const tocResize = document.createElement('div');
-            tocResize.className = 'file-viewer-toc-resize';
-            fileViewerToc.appendChild(tocResize);
-            let tocResizing = false;
-            tocResize.addEventListener('mousedown', function(e) {
-                tocResizing = true;
-                tocResize.classList.add('active');
-                document.body.style.cursor = 'col-resize';
-                document.body.style.userSelect = 'none';
+        fileViewerToc.innerHTML = '';
+        // Add resize handle
+        const tocResize = document.createElement('div');
+        tocResize.className = 'file-viewer-toc-resize';
+        fileViewerToc.appendChild(tocResize);
+
+        const headings = fileViewerBody.querySelectorAll('h1, h2, h3, h4');
+        const tocLinks = [];
+        headings.forEach((h, i) => {
+            const id = 'fv-heading-' + i;
+            const level = parseInt(h.tagName[1]);
+            h.id = id;
+            const a = document.createElement('a');
+            a.href = '#' + id;
+            a.className = 'toc-' + h.tagName.toLowerCase();
+            a.dataset.level = level;
+            a.addEventListener('click', function(e) {
                 e.preventDefault();
+                h.scrollIntoView({ behavior: 'smooth', block: 'start' });
             });
-            document.addEventListener('mousemove', function(e) {
-                if (!tocResizing) return;
-                const tocRect = fileViewerToc.getBoundingClientRect();
-                const newWidth = Math.max(100, Math.min(400, e.clientX - tocRect.left));
-                fileViewerToc.style.width = newWidth + 'px';
-            });
-            document.addEventListener('mouseup', function() {
-                if (!tocResizing) return;
-                tocResizing = false;
-                tocResize.classList.remove('active');
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-            });
+            // Text goes in a span so chevron + text are separate
+            const span = document.createElement('span');
+            span.textContent = h.textContent;
+            a.appendChild(span);
+            fileViewerToc.appendChild(a);
+            tocLinks.push(a);
+        });
 
-            const headings = fileViewerBody.querySelectorAll('h1, h2, h3, h4');
-            const tocLinks = [];
-            headings.forEach((h, i) => {
-                const id = 'fv-heading-' + i;
-                const level = parseInt(h.tagName[1]);
-                h.id = id;
-                const a = document.createElement('a');
-                a.href = '#' + id;
-                a.className = 'toc-' + h.tagName.toLowerCase();
-                a.dataset.level = level;
-                a.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                });
-                // Text goes in a span so chevron + text are separate
-                const span = document.createElement('span');
-                span.textContent = h.textContent;
-                a.appendChild(span);
-                fileViewerToc.appendChild(a);
-                tocLinks.push(a);
-            });
-
-            // Add chevrons and collapse all by default
-            tocLinks.forEach((link, i) => {
-                const level = parseInt(link.dataset.level);
-                const next = tocLinks[i + 1];
-                if (next && parseInt(next.dataset.level) > level) {
-                    const chevron = document.createElement('i');
-                    chevron.className = 'fas fa-chevron-down toc-chevron';
-                    link.prepend(chevron);
-                    link.classList.add('collapsed');
-                    // Hide all children
-                    let sibling = link.nextElementSibling;
-                    while (sibling && parseInt(sibling.dataset.level) > level) {
-                        sibling.classList.add('toc-hidden');
-                        sibling = sibling.nextElementSibling;
-                    }
-                }
-            });
-
-            // Collapse/expand on chevron click
-            fileViewerToc.addEventListener('click', function(e) {
-                const chevron = e.target.closest('.toc-chevron');
-                if (!chevron) return;
-                e.preventDefault();
-                e.stopPropagation();
-                const link = chevron.closest('a');
-                const level = parseInt(link.dataset.level);
-                const collapsed = link.classList.toggle('collapsed');
-                // Toggle all following deeper-level siblings
+        // Add chevrons and collapse all by default
+        tocLinks.forEach((link, i) => {
+            const level = parseInt(link.dataset.level);
+            const next = tocLinks[i + 1];
+            if (next && parseInt(next.dataset.level) > level) {
+                const chevron = document.createElement('i');
+                chevron.className = 'fas fa-chevron-down toc-chevron';
+                link.prepend(chevron);
+                link.classList.add('collapsed');
+                // Hide all children
                 let sibling = link.nextElementSibling;
                 while (sibling && parseInt(sibling.dataset.level) > level) {
-                    sibling.classList.toggle('toc-hidden', collapsed);
-                    // If collapsing, also collapse any nested parents
-                    if (collapsed && sibling.querySelector('.toc-chevron')) {
-                        sibling.classList.add('collapsed');
-                    }
+                    sibling.classList.add('toc-hidden');
                     sibling = sibling.nextElementSibling;
                 }
-            });
-        }
+            }
+        });
+    }
 
-        fileViewerOverlay.classList.add('show');
+    // One-time TOC wiring (renderFile recreates the TOC's children, so these delegate)
+    if (fileViewerToc) {
+        // Drag the resize handle to change TOC width
+        let tocResizing = false;
+        fileViewerToc.addEventListener('mousedown', function(e) {
+            const handle = e.target.closest('.file-viewer-toc-resize');
+            if (!handle) return;
+            tocResizing = true;
+            handle.classList.add('active');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', function(e) {
+            if (!tocResizing) return;
+            const tocRect = fileViewerToc.getBoundingClientRect();
+            const newWidth = Math.max(100, Math.min(400, e.clientX - tocRect.left));
+            fileViewerToc.style.width = newWidth + 'px';
+        });
+        document.addEventListener('mouseup', function() {
+            if (!tocResizing) return;
+            tocResizing = false;
+            const handle = fileViewerToc.querySelector('.file-viewer-toc-resize');
+            if (handle) handle.classList.remove('active');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        });
+
+        // Collapse/expand on chevron click
+        fileViewerToc.addEventListener('click', function(e) {
+            const chevron = e.target.closest('.toc-chevron');
+            if (!chevron) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const link = chevron.closest('a');
+            const level = parseInt(link.dataset.level);
+            const collapsed = link.classList.toggle('collapsed');
+            // Toggle all following deeper-level siblings
+            let sibling = link.nextElementSibling;
+            while (sibling && parseInt(sibling.dataset.level) > level) {
+                sibling.classList.toggle('toc-hidden', collapsed);
+                // If collapsing, also collapse any nested parents
+                if (collapsed && sibling.querySelector('.toc-chevron')) {
+                    sibling.classList.add('collapsed');
+                }
+                sibling = sibling.nextElementSibling;
+            }
+        });
+    }
+
+    function renderRaw(content) {
+        fileViewerToc.style.display = 'none';
+        fileViewerBody.style.display = 'none';
+        fileViewerEditor.style.display = '';
+        fileViewerEditor.value = content;
+    }
+
+    // Toggle between rendered markdown and a raw editable textarea
+    if (fileViewerToggle) {
+        fileViewerToggle.addEventListener('click', function() {
+            if (rawMode) currentContent = fileViewerEditor.value;  // preview unsaved edits
+            setRawMode(!rawMode);
+        });
+    }
+
+    // Save the edited raw content back into the story's history tree
+    if (fileViewerSave) {
+        fileViewerSave.addEventListener('click', function() {
+            if (!currentFile) return;
+            currentContent = fileViewerEditor.value;
+            socket.emit('save_story_file', { filename: currentFile, content: currentContent });
+        });
+    }
+    socket.on('story_file_saved', function() {
+        fileViewerSave.textContent = 'Saved';
+        setTimeout(() => { fileViewerSave.textContent = 'Save'; }, 1200);
     });
 
     // File viewer close

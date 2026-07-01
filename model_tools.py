@@ -161,21 +161,29 @@ def roll_dice_tool_handler(dice: str, **kwargs) -> int:
     rolls = [random.randint(1, sides) for _ in range(num)]
     return sum(rolls)
 
-def dnd_dice_tool_handler(sides: int, count: int = 1, multiplier: int = 1, bonus: int = 0, advantage: bool = False, desc: str = "", **kwargs) -> int:
+def dnd_dice_tool_handler(sides: int, count: int = 1, multiplier: int = 1, bonus: int = 0, advantage: bool = False, disadvantage: bool = False, desc: str = "", **kwargs) -> int:
     """dnd_dice: Roll dice for a D&D 5e check, attack, or damage. Rolls `count` dice of `sides` sides, multiplies the sum by `multiplier`, then adds `bonus`. Returns the final total.
     sides (integer): Number of sides on each die. E.g. 20 for a d20, 8 for a d8.
     count (integer): How many dice to roll. Defaults to 1.
     multiplier (integer): Multiplies the summed dice before the bonus is added (e.g. 2 for a critical hit). Defaults to 1.
     bonus (integer): Flat modifier added after multiplying (ability modifier + proficiency, etc.). Defaults to 0.
     advantage (boolean): If true, roll the whole dice set twice and keep the higher sum before applying multiplier and bonus. Defaults to false.
+    disadvantage (boolean): If true, roll the whole dice set twice and keep the lower sum before applying multiplier and bonus. Defaults to false.
     desc (string): Short label for what the roll is for, e.g. 'Elara longsword attack'. Defaults to empty.
     """
     if sides < 1:
         raise ValueError("Number of sides must be greater than 0.")
     if count < 1:
         raise ValueError("Number of dice must be greater than 0.")
+    if advantage and disadvantage:
+        raise ValueError("Cannot roll with both advantage and disadvantage.")
     roll_set = lambda: sum(random.randint(1, sides) for _ in range(count))
-    total = max(roll_set(), roll_set()) if advantage else roll_set()
+    if advantage:
+        total = max(roll_set(), roll_set())
+    elif disadvantage:
+        total = min(roll_set(), roll_set())
+    else:
+        total = roll_set()
     return total * multiplier + bonus
 
 
