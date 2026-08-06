@@ -1,6 +1,7 @@
 #!./.venv/bin/python
 import os
 import json
+import shutil
 from flask_socketio import SocketIO, emit
 from flask import Flask, render_template, redirect, url_for
 from narrator import Narrator
@@ -10,7 +11,9 @@ from utils import (
     historyExists, isValidGameSystem, listGameSystemNames,
     archiveHistory, copyStory, archiveStoryDir, renameStory,
     loadAllPreviousHistory, resolveInstructionFile,
+    listInstructionVersions, EVAL_STORIES_DIR, PROMPT_CONTEXT_FILES,
 )
+from studio import listEvalTurns, runStudio, listRuns, loadRun
 
 app = Flask(__name__, template_folder="frontend/templates", static_folder="frontend/static")
 app.secret_key = os.urandom(24)
@@ -21,7 +24,7 @@ narrator = None
 settings = {"cache_mode": "1h"}  # "none" | "5m" | "1h"
 models = [
     "anthropic/claude-fable-5",
-    "anthropic/claude-opus-4.8",
+    "anthropic/claude-opus-5",
     "anthropic/claude-haiku-4.5",
     "openai/gpt-5.5",
     "openai/gpt-5.5-pro",
@@ -73,6 +76,7 @@ def select_story(data: dict[str, str]):
         "model_name": narrator.model_name,
         "system_name": story_info["system"],
         "story_context": list(narrator.files.keys()),
+        "prompt_context_names": list(PROMPT_CONTEXT_FILES),
     })
     logger.info(f"narrator initialized: {narrator}")
 
@@ -115,11 +119,7 @@ def copy_story(data: dict[str, str]):
     source_story_id = data.get('source_story')
     new_name = data.get('new_story_name', '').strip()
     model_name = data.get('model_name')
-    copy_pc = data.get('copy_pc', True)
-    copy_plan = data.get('copy_plan', True)
-    copy_summary = data.get('copy_summary', True)
-    copy_history = data.get('copy_history', False)
-    copy_other = data.get('copy_other', True)
+    mode = data.get('mode', 'duplicate')
 
     if not source_story_id or not new_name:
         emit('error', {"message": "Source story and new story name are required"})
@@ -129,17 +129,19 @@ def copy_story(data: dict[str, str]):
         emit('error', {"message": "Model name is required"})
         return
 
-    new_story_id = copyStory(source_story_id, new_name, model_name, copy_pc, copy_plan, copy_summary, copy_history, copy_other)
-    if new_story_id:
-        story_info = loadStoryInfo(new_story_id)
-        emit('story_copied', {
-            "id": new_story_id,
-            "name": new_name,
-            "system": story_info.get('system', 'hp'),
-            "model": model_name
-        })
-    else:
-        emit('error', {"message": f"Failed to copy story '{source_story_id}'"})
+    new_story_id = copyStory(source_story_id, new_name, model_name, mode)
+    if new_story_id is None:
+        emit('error', {"message": "This story has no setup to start a run from: its story context was first written during the opening turn, not before it. Duplicate the story instead."})
+        return
+
+    story_info = loadStoryInfo(new_story_id)
+    emit('story_copied', {
+        "id": new_story_id,
+        "name": new_name,
+        "system": story_info.get('system', 'hp'),
+        "model": model_name,
+        "last_activity": story_last_activity(new_story_id),
+    })
 
 @socket.on('summarize_history')
 def summarize_history():
@@ -227,6 +229,32 @@ def save_story_file(data: dict[str, str]):
     narrator.editFile(filename, data.get('content', ''))
     emit('story_file_saved', {"filename": filename})
 
+@socket.on('create_story_file')
+def create_story_file(data: dict[str, str]):
+    global narrator
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
+    filename = data.get('filename', '').strip()
+    if not filename or filename in narrator.files:
+        emit('error', {"message": f"Invalid or duplicate entry name: {filename!r}"})
+        return
+    narrator.editFile(filename, '')
+    emit('story_file_created', {"filename": filename})
+
+@socket.on('delete_story_file')
+def delete_story_file(data: dict[str, str]):
+    global narrator
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
+    filename = data.get('filename', '')
+    if filename not in narrator.files:
+        emit('error', {"message": f"File not found: {filename}"})
+        return
+    narrator.deleteFile(filename)
+    emit('story_file_deleted', {"filename": filename})
+
 @socket.on('get_debug_messages')
 def get_debug_messages():
     global narrator
@@ -295,6 +323,60 @@ def fork_story(data: dict[str, str]):
     if new_id:
         info = loadStoryInfo(new_id)
         emit('story_forked', {"id": new_id, "name": new_name, "system": info.get('system', 'hp'), "model": info.get('model')})
+
+@socket.on('capture_eval_turn')
+def capture_eval_turn(data: dict[str, str]):
+    """Freeze a turn into ./eval_stories/ for the prompt studio. Same fork the story list uses, just
+    written to a different root. Does not switch the view."""
+    global narrator
+    turn_id = data.get('turn_id')
+    if narrator is None or not turn_id:
+        emit('error', {"message": "Capture requires an active story and a turn"})
+        return
+    name = data.get('name', '').strip() or f"{loadStoryInfo(narrator.story_id)['story_name']} — turn"
+    new_id = narrator.fork_to(turn_id, name, root=EVAL_STORIES_DIR)
+    if new_id:
+        emit('eval_turn_captured', {"id": new_id, "name": name})
+        emit('eval_turns', listEvalTurns())
+
+@socket.on('list_eval_turns')
+def list_eval_turns():
+    emit('eval_turns', listEvalTurns())
+
+@socket.on('delete_eval_turn')
+def delete_eval_turn(data: dict[str, str]):
+    eval_id = data.get('id')
+    if eval_id:
+        shutil.rmtree(f"./{EVAL_STORIES_DIR}/{eval_id}")
+        emit('eval_turns', listEvalTurns())
+
+@socket.on('studio_run')
+def studio_run(data: dict):
+    """Generate n completions per instruction version for a captured turn, streamed lane by lane."""
+    runStudio(
+        socket,
+        eval_id=data['eval_id'],
+        base=data.get('base', 'core'),
+        ver_a=int(data['ver_a']),
+        ver_b=int(data['ver_b']),
+        n=int(data.get('n', 1)),
+        model=data['model'],
+        cache=bool(data.get('cache', True)),
+    )
+
+@socket.on('list_studio_runs')
+def list_studio_runs(data: dict):
+    emit('studio_runs', {"eval_id": data['eval_id'], "runs": listRuns(data['eval_id'])})
+
+@socket.on('load_studio_run')
+def load_studio_run(data: dict):
+    emit('studio_run_loaded', loadRun(data['eval_id'], data['file']))
+
+@socket.on('get_studio_options')
+def get_studio_options(data: dict = None):
+    base = (data or {}).get('base', 'core')
+    emit('studio_options', {"base": base, "versions": listInstructionVersions(base),
+                            "bases": listGameSystemNames(), "models": models})
 
 @socket.on('edit_message')
 def edit_message(data):

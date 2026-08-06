@@ -5,11 +5,11 @@ import {
     accumulatedContent, setAccumulatedContent,
     setIsToolCallInProgress, setIsThinkingInProgress,
 } from './state.js';
-import { scrollToBottom, scrollToBottomIfStuck, showTypingIndicator, hideTypingIndicator, updateCostDisplay } from './ui.js';
+import { scrollToBottom, scrollToBottomIfStuck, showTypingIndicator, hideTypingIndicator, updateCostDisplay, showErrorPopup } from './ui.js';
 import {
     ensureLiveWrapper, ensureRow, appendReasoning, appendTool, appendDice, closeRows,
 } from './reasoningRow.js';
-import { addRetryButton, addEditButton, addRollbackButton, addForkButton } from './messageActions.js';
+import { addRetryButton, addEditButton, addRollbackButton, addForkButton, addCaptureButton } from './messageActions.js';
 import { addStoryFileToSidebar } from './story.js';
 
 // Render an out-of-narration <md> block as its own boxed markdown
@@ -62,7 +62,16 @@ function addUserMessage(message, disableInput = true) {
 }
 
 // Append a narration block to a turn wrapper and return it
-function appendNarration(wrapper, content) {
+// Render narration that is still streaming: the model's tags arrive unterminated, so close them
+// off before rendering or the markdown pipeline sees a half-open block.
+export function renderStreamedNarration(el, content) {
+    let s = content.trim();
+    if (s.includes('<narration>') && !s.includes('</narration>')) s += '</narration>';
+    if (s.lastIndexOf('<md>') > s.lastIndexOf('</md>')) s += '</md>';
+    el.innerHTML = processNarration(s);
+}
+
+export function appendNarration(wrapper, content) {
     const el = document.createElement('div');
     el.className = 'message narrator-message';
     el.innerHTML = processNarration(content);
@@ -117,6 +126,7 @@ function finalizeWrapper(wrapper, node) {
         addRetryButton(narr);
         addRollbackButton(narr);
         addForkButton(narr);
+        addCaptureButton(narr);
         if (node.count > 1) attachBranchSwitch(narr, node);
     }
     return narr;
@@ -203,6 +213,8 @@ function renderNodes(nodes) {
 
 // Wire up all socket listeners and form handler
 export function initChat() {
+    socket.on('error', (data) => showErrorPopup(data.message));
+
     // Message form submit
     if (messageForm) {
         messageForm.addEventListener('submit', function(e) {
@@ -325,14 +337,7 @@ export function initChat() {
         if (currentNarratorMessageElement) {
             currentNarratorMessageElement.style.display = 'block';
             setAccumulatedContent(accumulatedContent + data.text);
-            let content = accumulatedContent.trim();
-            if (content.includes('<narration>') && !content.includes('</narration>')) {
-                content += '</narration>';
-            }
-            if (content.lastIndexOf('<md>') > content.lastIndexOf('</md>')) {
-                content += '</md>';
-            }
-            currentNarratorMessageElement.innerHTML = processNarration(content);
+            renderStreamedNarration(currentNarratorMessageElement, accumulatedContent);
             scrollToBottomIfStuck();
         }
     });

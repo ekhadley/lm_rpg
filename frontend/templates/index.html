@@ -17,7 +17,6 @@
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600&display=swap">
 </head>
 <body>
@@ -26,16 +25,56 @@
         <div class="sidebar">
             <div class="sidebar-resize" id="sidebar-resize"></div>
             <div class="sidebar-header">
-                <h5 class="sidebar-title">Stories</h5>
+                <h5 class="sidebar-title" id="sidebar-title">Stories</h5>
                 <div class="sidebar-header-actions">
+                    <button class="theme-toggle-btn" id="theme-toggle-btn" title="Change theme">
+                        <i class="fas fa-palette"></i>
+                    </button>
                     <button class="settings-btn" id="settings-btn" title="Settings">
                         <i class="fas fa-gear"></i>
                     </button>
                     <button class="new-story-btn" id="new-story-btn">
                         <i class="fas fa-plus"></i>
                     </button>
+                    <div class="theme-picker" id="theme-picker">
+                        <div class="theme-picker-grid">
+                            <button class="theme-option" data-theme="discord">
+                                <div class="theme-swatch" style="background: linear-gradient(135deg, #2b2d31 50%, #5865f2 50%)"></div>
+                                <span>Discord</span>
+                            </button>
+                            <button class="theme-option" data-theme="green-lamp">
+                                <div class="theme-swatch" style="background: linear-gradient(135deg, #0f1a14 50%, #b8a44c 50%)"></div>
+                                <span>Green Lamp</span>
+                            </button>
+                            <button class="theme-option" data-theme="gruvbox-dark">
+                                <div class="theme-swatch" style="background: linear-gradient(135deg, #2c2c2c 50%, #83a598 50%)"></div>
+                                <span>Gruvbox</span>
+                            </button>
+                            <button class="theme-option" data-theme="leather-gilt">
+                                <div class="theme-swatch" style="background: linear-gradient(135deg, #1f1812 50%, #c9a84c 50%)"></div>
+                                <span>Leather & Gilt</span>
+                            </button>
+                            <button class="theme-option" data-theme="parchment">
+                                <div class="theme-swatch" style="background: linear-gradient(135deg, #ede4d3 50%, #8b2d2d 50%)"></div>
+                                <span>Parchment</span>
+                            </button>
+                            <button class="theme-option" data-theme="study">
+                                <div class="theme-swatch" style="background: linear-gradient(135deg, #e4e8ec 50%, #2e6e4e 50%)"></div>
+                                <span>Study</span>
+                            </button>
+                            <button class="theme-option" data-theme="tavern">
+                                <div class="theme-swatch" style="background: linear-gradient(135deg, #1b1511 50%, #d4a24c 50%)"></div>
+                                <span>Tavern</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
+            <div class="mode-toggle" id="mode-toggle">
+                <button class="mode-option active" data-mode="stories">Stories</button>
+                <button class="mode-option" data-mode="studio">Studio</button>
+            </div>
+            <ul class="eval-turn-list" id="eval-turn-list" style="display: none;"></ul>
             <ul class="story-list" id="story-list">
                 {% for story in stories %}
                 <li class="story-item {% if session.get('story') == story.id %}active{% endif %}" data-story="{{ story.id }}"{% if story.model %} data-model="{{ story.model }}"{% endif %}>
@@ -57,9 +96,13 @@
                             <i class="fas fa-pen"></i>
                             <span>Rename Story</span>
                         </div>
-                        <div class="context-menu-item" data-action="copy-story">
+                        <div class="context-menu-item" data-action="copy-story" data-mode="duplicate">
                             <i class="fas fa-copy"></i>
-                            <span>Copy Story</span>
+                            <span>Duplicate</span>
+                        </div>
+                        <div class="context-menu-item" data-action="copy-story" data-mode="run">
+                            <i class="fas fa-rotate-right"></i>
+                            <span>New Run</span>
                         </div>
                         <div class="context-menu-item delete" data-action="delete-story">
                             <i class="fas fa-trash"></i>
@@ -69,47 +112,46 @@
                 </li>
                 {% endfor %}
             </ul>
-            <div class="sidebar-footer">
-                <button class="theme-toggle-btn" id="theme-toggle-btn" title="Change theme">
-                    <i class="fas fa-palette"></i>
-                </button>
-                <div class="theme-picker" id="theme-picker">
-                    <div class="theme-picker-grid">
-                        <button class="theme-option" data-theme="discord">
-                            <div class="theme-swatch" style="background: linear-gradient(135deg, #2b2d31 50%, #5865f2 50%)"></div>
-                            <span>Discord</span>
-                        </button>
-                        <button class="theme-option" data-theme="green-lamp">
-                            <div class="theme-swatch" style="background: linear-gradient(135deg, #0f1a14 50%, #b8a44c 50%)"></div>
-                            <span>Green Lamp</span>
-                        </button>
-                        <button class="theme-option" data-theme="gruvbox-dark">
-                            <div class="theme-swatch" style="background: linear-gradient(135deg, #2c2c2c 50%, #83a598 50%)"></div>
-                            <span>Gruvbox</span>
-                        </button>
-                        <button class="theme-option" data-theme="leather-gilt">
-                            <div class="theme-swatch" style="background: linear-gradient(135deg, #1f1812 50%, #c9a84c 50%)"></div>
-                            <span>Leather & Gilt</span>
-                        </button>
-                        <button class="theme-option" data-theme="parchment">
-                            <div class="theme-swatch" style="background: linear-gradient(135deg, #ede4d3 50%, #8b2d2d 50%)"></div>
-                            <span>Parchment</span>
-                        </button>
-                        <button class="theme-option" data-theme="study">
-                            <div class="theme-swatch" style="background: linear-gradient(135deg, #e4e8ec 50%, #2e6e4e 50%)"></div>
-                            <span>Study</span>
-                        </button>
-                        <button class="theme-option" data-theme="tavern">
-                            <div class="theme-swatch" style="background: linear-gradient(135deg, #1b1511 50%, #d4a24c 50%)"></div>
-                            <span>Tavern</span>
-                        </button>
-                    </div>
+        </div>
+
+        <!-- Prompt studio: one captured turn, regenerated under two instruction versions -->
+        <div class="studio-wrapper" id="studio-wrapper" style="display: none;">
+            <div class="studio-header">
+                <div class="studio-title-row">
+                    <h5 id="studio-turn-name">Select a captured turn</h5>
+                    <select class="studio-history" id="studio-history"></select>
+                    <span class="studio-cost" id="studio-cost"></span>
+                </div>
+                <div class="studio-controls" id="studio-controls">
+                    <label>Base
+                        <select id="studio-base"></select>
+                    </label>
+                    <label>Version A
+                        <select id="studio-ver-a"></select>
+                    </label>
+                    <label>Version B
+                        <select id="studio-ver-b"></select>
+                    </label>
+                    <label>Model
+                        <select id="studio-model"></select>
+                    </label>
+                    <label>N
+                        <input type="number" id="studio-n" value="1" min="1" max="4">
+                    </label>
+                    <label class="studio-check custom-checkbox">
+                        <input type="checkbox" id="studio-cache"><span class="checkmark"></span>Cache
+                    </label>
+                    <button class="studio-run-btn" id="studio-run-btn">
+                        <i class="fas fa-play"></i> Generate
+                    </button>
+                    <span class="studio-warning" id="studio-warning"></span>
                 </div>
             </div>
+            <div class="studio-columns" id="studio-columns"></div>
         </div>
 
         <!-- Main chat area -->
-        <div class="chat-wrapper">
+        <div class="chat-wrapper" id="chat-wrapper">
             <div class="chat-header" id="chat-header" style="display: none;">
                 <div class="story-header-content">
                     <div class="story-title-row">
@@ -143,16 +185,40 @@
             </div>
 
             <!-- Floating corner buttons -->
-            <div class="floating-cost-container">
+            <div class="floating-cost-container" id="floating-buttons" style="display: none;">
                 <button id="summarize-button" class="floating-button" title="Summarize current conversation">
                     <i class="fas fa-archive"></i>
                 </button>
                 <button id="cost-button" class="floating-button" title="Cost information">
                     <i class="fas fa-sack-dollar"></i>
                 </button>
-                <button id="export-button" class="floating-button" title="Export conversation to console">
+                <button id="export-button" class="floating-button">
                     <i class="fas fa-code"></i>
                 </button>
+                <div id="debug-popup" class="cost-popup">
+                    <div class="cost-popup-header">
+                        <i class="fas fa-code"></i>
+                        <span>Conversation Debug</span>
+                    </div>
+                    <div class="cost-popup-body">
+                        <div class="cost-stat">
+                            <span class="cost-label">User Turns</span>
+                            <span class="cost-value" id="debug-user-count">0</span>
+                        </div>
+                        <div class="cost-stat">
+                            <span class="cost-label">Assistant Messages</span>
+                            <span class="cost-value" id="debug-assistant-count">0</span>
+                        </div>
+                        <div class="cost-stat">
+                            <span class="cost-label">Tool Calls</span>
+                            <span class="cost-value" id="debug-tool-count">0</span>
+                        </div>
+                        <div class="cost-stat">
+                            <span class="cost-label">File Edits</span>
+                            <span class="cost-value" id="debug-file-count">0</span>
+                        </div>
+                    </div>
+                </div>
                 <div id="cost-popup" class="cost-popup">
                     <div class="cost-popup-header">
                         <i class="fas fa-sack-dollar"></i>
@@ -189,6 +255,9 @@
             <div class="right-sidebar-resize" id="right-sidebar-resize"></div>
             <div class="sidebar-header">
                 <h5 class="sidebar-title">Story Context</h5>
+                <button class="new-story-btn" id="new-context-file-btn" title="New story context entry">
+                    <i class="fas fa-plus"></i>
+                </button>
             </div>
             <ul class="file-list" id="file-list"></ul>
             <div class="right-sidebar-footer" id="right-sidebar-footer">
@@ -323,6 +392,15 @@
         </div>
     </div>
 
+    <div id="error-popup" class="side-popup confirm-popup">
+        <div class="confirm-popup-body">
+            <p id="error-popup-message"></p>
+        </div>
+        <div class="confirm-popup-footer">
+            <button class="btn btn-primary" id="error-popup-ok">OK</button>
+        </div>
+    </div>
+
     <div id="fork-popup" class="side-popup confirm-popup">
         <div class="confirm-popup-body">
             <p>Fork to a new story from this turn:</p>
@@ -394,18 +472,19 @@
     <!-- Copy Story Modal -->
     <div id="copy-story-modal" class="side-popup">
         <div class="modal-header">
-            <h5>Copy Story</h5>
+            <h5><i class="fas fa-copy" id="copy-story-modal-icon"></i><span id="copy-story-modal-title">Duplicate Story</span></h5>
             <button class="modal-close" id="copy-story-modal-close">
                 <i class="fas fa-times"></i>
             </button>
         </div>
         <div class="modal-body">
+            <p class="copy-story-hint" id="copy-story-hint"></p>
             <div class="form-group">
                 <label for="copy_story_name">New Story Name</label>
                 <input type="text" id="copy_story_name" class="form-control" placeholder="Enter new story name" required>
             </div>
             <div class="form-group inline-field">
-                <label class="select-label">Model:</label>
+                <label class="select-label">Model</label>
                 <div class="custom-select-wrapper">
                     <div class="custom-select" id="copy-story-model-select-custom" tabindex="0">
                         <span class="custom-select-value">{{ models[0] }}</span>
@@ -423,18 +502,10 @@
                     </div>
                 </div>
             </div>
-            <div class="form-group">
-                <label>Include</label>
-                <label class="custom-checkbox"><input type="checkbox" id="copy_pc" checked><span class="checkmark"></span>Character (pc)</label>
-                <label class="custom-checkbox"><input type="checkbox" id="copy_plan" checked><span class="checkmark"></span>Story plan</label>
-                <label class="custom-checkbox"><input type="checkbox" id="copy_summary" checked><span class="checkmark"></span>Story summary</label>
-                <label class="custom-checkbox"><input type="checkbox" id="copy_other" checked><span class="checkmark"></span>All other story files (npc sheets, etc.)</label>
-                <label class="custom-checkbox"><input type="checkbox" id="copy_history"><span class="checkmark"></span>Message history (incl. archives)</label>
-            </div>
         </div>
         <div class="modal-footer">
             <button class="btn btn-secondary" id="copy-story-modal-cancel">Cancel</button>
-            <button class="btn btn-primary" id="copy-story-btn">Copy</button>
+            <button class="btn btn-primary" id="copy-story-btn">Duplicate</button>
         </div>
     </div>
 
@@ -458,8 +529,8 @@
             <div class="file-viewer-header">
                 <h5 id="file-viewer-title"></h5>
                 <div class="file-viewer-header-actions">
-                    <button class="btn btn-secondary" id="file-viewer-toggle">Raw</button>
                     <button class="btn btn-secondary" id="file-viewer-save">Save</button>
+                    <button class="btn btn-secondary" id="file-viewer-toggle">Raw</button>
                     <button class="modal-close" id="file-viewer-close">
                         <i class="fas fa-times"></i>
                     </button>

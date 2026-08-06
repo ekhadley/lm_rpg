@@ -105,6 +105,31 @@ function handleFork(messageElement, anchorEl) {
     }, anchorEl);
 }
 
+// Freeze this turn into the prompt studio's collection. Deliberately does not switch views —
+// captures accumulate in the sidebar's Studio list for comparing later.
+export function addCaptureButton(messageElement) {
+    if (messageElement.querySelector('.capture-button')) return;
+    let container = messageElement.querySelector('.message-actions');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'message-actions';
+        messageElement.appendChild(container);
+    }
+    const btn = document.createElement('button');
+    btn.className = 'capture-button';
+    btn.innerHTML = '<i class="fas fa-flask"></i>';
+    btn.title = 'Capture this turn for the prompt studio';
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const wrapper = messageElement.closest('.assistant-turn-wrapper');
+        if (!wrapper || !wrapper.dataset.turnId) return;
+        socket.emit('capture_eval_turn', { turn_id: wrapper.dataset.turnId });
+        btn.classList.add('captured');
+        setTimeout(() => btn.classList.remove('captured'), 1200);
+    });
+    container.appendChild(btn);
+}
+
 // Build the inline edit affordance (pencil button) for a user message.
 function makeEditAffordance(userMessageContainer) {
     const actions = document.createElement('div');

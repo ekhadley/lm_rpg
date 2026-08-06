@@ -1,6 +1,6 @@
 import os
 import json
-from utils import getFullStoryInstruction, loadAllPreviousHistory, makeNewStoryDir
+from utils import getFullStoryInstruction, loadAllPreviousHistory, makeNewStoryDir, STORIES_ROOT_DIR
 from model_tools import Toolbox, SYSTEM_TOOLBOXES
 from callbacks import WebCallbackHandler
 from openrouter import OpenRouterProvider
@@ -105,14 +105,27 @@ class Narrator:
             self.tree.add_node(None, "user", [], files=dict(self.files))
         self._rebuildContext()
 
-    def editFile(self, filename: str, content: str) -> None:
-        """Persist a manual edit to a story-context entry by folding it into the current leaf's files delta."""
-        self.files[filename] = content
-        leaf = self.tree.current_leaf  # always set: an entry can only exist in self.files if the tree has nodes
-        before = self.tree.file_state_at(self.tree.nodes[leaf]["parent"])
-        self.tree.nodes[leaf]["files"] = self._diffFiles(before, self.files)
-        self._rebuildContext()  # so the next turn's system prompt reflects the edit
+    def _commitFiles(self) -> None:
+        """Persist a manual story-context change by folding the whole context into the current leaf's
+        delta, so the change is local to this branch. A story with no turns yet gets a hidden
+        synthetic root (empty messages) to carry the context, same as clearMessages."""
+        if self.tree.current_leaf is None:
+            self.tree.add_node(None, "user", [], files=dict(self.files))
+        else:
+            leaf = self.tree.current_leaf
+            before = self.tree.file_state_at(self.tree.nodes[leaf]["parent"])
+            self.tree.nodes[leaf]["files"] = self._diffFiles(before, self.files)
+        self._rebuildContext()  # so the next turn's system prompt reflects the change
         self.saveMessages()
+
+    def editFile(self, filename: str, content: str) -> None:
+        """Write a story-context entry, creating it if it doesn't exist."""
+        self.files[filename] = content
+        self._commitFiles()
+
+    def deleteFile(self, filename: str) -> None:
+        del self.files[filename]
+        self._commitFiles()
 
     def _emitHistory(self):
         self.socket.emit('conversation_history', self._transformTreeForFrontend())
@@ -313,20 +326,21 @@ class Narrator:
         self.tree.current_leaf = node_id
         self._finishNav()
 
-    def fork_to(self, node_id: str, new_name: str) -> str | None:
+    def fork_to(self, node_id: str, new_name: str, root: str = STORIES_ROOT_DIR) -> str | None:
         """Fork into a fresh story whose history is the linear path root→node_id. The story context
-        rides along inside the copied node deltas. The source story is untouched. Returns the new id."""
+        rides along inside the copied node deltas. The source story is untouched. Returns the new id.
+        `root` is EVAL_STORIES_DIR when capturing a turn into the prompt studio."""
         node = self.tree.nodes.get(node_id)
         if not node or node["role"] != "assistant" or not new_name:
             return None
-        new_id = makeNewStoryDir(new_name, self.system_name, self.model_name)
+        new_id = makeNewStoryDir(new_name, self.system_name, self.model_name, root=root)
         path = self.tree.path_to(node_id)
         nodes = []  # copy each node on the path, trimming children to just the next path node
         for i, nid in enumerate(path):
             n = dict(self.tree.nodes[nid])
             n["children"] = [path[i + 1]] if i + 1 < len(path) else []
             nodes.append(n)
-        with open(f"./stories/{new_id}/history.json", "w") as f:
+        with open(f"./{root}/{new_id}/history.json", "w") as f:
             json.dump({"model_name": self.model_name, "system_name": self.system_name, "current_leaf": node_id, "nodes": nodes}, f, indent=4)
         return new_id
 

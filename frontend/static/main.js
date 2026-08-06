@@ -3,11 +3,12 @@ import { setPendingStoryName } from './state.js';
 import { initAllDropdowns } from './dropdowns.js';
 import { initStory, selectStoryDirectly, closeCopyStoryModal } from './story.js';
 import { initChat } from './chat.js';
-import { exportConversation } from './debugViewer.js';
+import { initStudio } from './studio.js';
+import { exportConversation, initDebugPopup } from './debugViewer.js';
 import {
     setupCostPopupBehavior, initTheme, initSettings,
     showSummarizePopup, hideSummarizePopup, positionSummarizePopup,
-    initConfirmPopup, hideConfirmPopup, initForkPopup,
+    initConfirmPopup, hideConfirmPopup, initForkPopup, initErrorPopup,
 } from './ui.js';
 
 // Initialize dropdowns
@@ -18,6 +19,9 @@ initStory();
 
 // Initialize chat socket handlers
 initChat();
+
+// Initialize the prompt studio (sidebar mode toggle + side-by-side comparison view)
+initStudio();
 
 // Auto-select initial story if provided via URL
 if (window.INITIAL_STORY) {
@@ -30,10 +34,12 @@ window.onload = function() {
     setupCostPopupBehavior();
     initConfirmPopup();
     initForkPopup();
+    initErrorPopup();
     initTheme();
     initSettings();
 
     if (exportButton) exportButton.addEventListener('click', exportConversation);
+    initDebugPopup();
     if (debugModalClose) debugModalClose.addEventListener('click', () => debugModal.classList.remove('show'));
 
     // Summarize button

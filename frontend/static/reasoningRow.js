@@ -15,13 +15,14 @@ function abbrev(data) {
     return '<code>' + escapeHtml(s) + '</code>';
 }
 
-// The in-progress turn wrapper (live streaming), creating it if absent.
-export function ensureLiveWrapper() {
-    const existing = chatHistory.querySelector('.assistant-turn-wrapper.in-progress');
+// The in-progress turn wrapper (live streaming), creating it if absent. `container` defaults to the
+// chat, but a prompt-studio lane passes its own column so the same renderers drive both.
+export function ensureLiveWrapper(container = chatHistory) {
+    const existing = container.querySelector('.assistant-turn-wrapper.in-progress');
     if (existing) return existing;
     const w = document.createElement('div');
     w.className = 'assistant-turn-wrapper in-progress';
-    chatHistory.appendChild(w);
+    container.appendChild(w);
     return w;
 }
 

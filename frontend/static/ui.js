@@ -248,6 +248,24 @@ export function initForkPopup() {
     });
 }
 
+// Error notice: a one-button popup for anything the server refused. Centered near the top, since
+// an error can arrive long after the thing that triggered it left the screen.
+export function showErrorPopup(message) {
+    const popup = document.getElementById('error-popup');
+    document.getElementById('error-popup-message').textContent = message;
+    popup.classList.add('show');
+    popup.style.left = Math.round((window.innerWidth - popup.offsetWidth) / 2) + 'px';
+    popup.style.top = '80px';
+}
+
+export function initErrorPopup() {
+    const popup = document.getElementById('error-popup');
+    document.getElementById('error-popup-ok').addEventListener('click', () => popup.classList.remove('show'));
+    document.addEventListener('click', function(e) {
+        if (popup.classList.contains('show') && !popup.contains(e.target)) popup.classList.remove('show');
+    });
+}
+
 export function initConfirmPopup() {
     const cancelBtn = document.getElementById('confirm-popup-cancel');
     const confirmBtn = document.getElementById('confirm-popup-confirm');

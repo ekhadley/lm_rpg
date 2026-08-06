@@ -51,6 +51,8 @@ class OpenRouterStream:
                 },
                 # Effort level (low/medium/high/xhigh/max) is controlled via verbosity, which maps to Anthropic's output_config.effort.
                 "verbosity": thinking_effort if thinking_enabled else None,
+                # Pin Claude models to Anthropic's own API, not Bedrock/Vertex.
+                "provider": {"only": ["anthropic"]} if "claude" in model_name.lower() else None,
                 "stream": True
             },
             stream = True

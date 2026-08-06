@@ -34,7 +34,9 @@ A game system is defined by:
 - `instructions.md` — the ruleset and world context the LM follows
 - Optionally, a `tools.py` providing system-specific tools (e.g. character sheet manipulation)
 
-The core instructions (`instructions/core.md`) define system-agnostic GM behavior: how to handle player intent, when to roll dice, how to narrate. Each game system's instructions layer on top of that with specific mechanics and setting.
+The core instructions (`instructions/core*.md`) define system-agnostic GM behavior: how to handle player intent, when to roll dice, how to narrate. Each game system's instructions layer on top of that with specific mechanics and setting.
+
+Instruction files are versioned by a trailing number (`core1.md`, `core2.md`, …). The highest number is what play uses; older versions are kept so the [prompt studio](#prompt-studio) can run two of them head to head.
 
 Game systems are divided into 'hard' systems and 'soft' systems. Hard systems are more like typical DnD (more dice rolling, characters with speficic stat sheets, predefined ability mechanics, etc), soft systems are more like a choose your own adventure type resolution system (outcomes determined more by holistic GM discretion and narrative considerations), although dice are still used where randomness is needed. core.md references both types and how to run them.
 
@@ -68,13 +70,23 @@ Each assistant turn also has a **fork** action (next to rerun/rewind): it spins 
 
 The model never sees a `.md` extension on context entries — names are bare identifiers throughout.
 
+## Prompt studio
+
+The toggle above the sidebar switches between **Play** and **Studio**. The studio answers one question: what does this exact turn look like under a different version of the instructions?
+
+Capture a turn from the chat (the fork action, aimed at `eval_stories/` instead of `stories/`) and it is frozen — the messages up to the player message being answered, plus the story context as of that point. In the studio you pick which instruction file to vary, two of its versions, a model, and how many completions to generate per version. Each completion gets its own column, streaming reasoning, narration, and tool calls live, side by side.
+
+Lanes are fully independent: each builds its own model client over its own copy of the story context, so a run never touches the live game or any story. With caching on, one lane per version goes first and the others wait for it to start producing output, by which point they read the shared prefix from cache instead of each paying to write it.
+
+Captured turns live in `eval_stories/{id}/`, shaped like a story (`info.json`, `history.json`) plus a `runs/` folder. Finished runs are saved there and can be reloaded from the dropdown.
+
 ## TODO
 
 - Cyberpunk RED hard system
 
-- Benchmarking loop for core instructions and system-specific instructions A/B testing
-    - maybe full suite with numerical scoring, maybe just a side by side comparator
-        - im thinking some kind of lm-arena type loop of generate turns with prompt A and prompt B, select preferred between pairs but where idk which came from which. show win% at the end
+- blind scoring on top of the prompt studio
+    - lm-arena type loop: generate turns with prompt A and prompt B, pick the preferred one of a pair without knowing which is which, show win% at the end
+    - currently the columns are labelled and unscored, so it's just eyeballing
     - maybe also for model benchamrking, but models are way easier to evaluate anyways so less value
 
 - extremely extensive story plans just break things. need to limit size or have more complicated scaffolding
@@ -82,6 +94,28 @@ The model never sees a `.md` extension on context entries — names are bare ide
     - my first thought is to condense the story plan and tailor it more for the form factor. no brainer either way
     - my second thought is that we should have the story plan give a ~30k token overview, with lots of references to blocked sections in a much more in depth guide.
         - This would require new tools for querying story files as well and/or extra delimiters in the detailed story plan for finding specified content chunks.
+
+- the default for a lm-based DM is to do extra planning up front, load it all into the story plan itself
+    - is this correct?
+    - arguments for:
+        - heavy planning documents are useful but not efficient for humans, but since AI cognitive labor is so cheap it makes sense to giga plan
+        - it seems good to frontload the heavy thinking to the plan (if X has already happened do Y, otherwise Z), rather than making decisions in the moment
+        - plan deviation is hard for models becuase becuase of mode seeking. if they've been following the plan as described for many steps, they are less likely to notice the points where it would be best to diverge
+    - arguments against:
+        - decisions made in the moment (rather than upfront planned paths) ahve the benefit of hindsight, info about current play
+
+    - an alternative/hybrid approach: plan heavily, but prune and tweak the story plan doc itself as play develops
+        - story plans have to change after play
+            - having an active DM with a static story plan doesnt make much sense
+            - just having a story summary doesn't change this
+            - the DMing instructions currently don't have much in the way of 'evaluate how play is going, change hard facts as necessary'
+            - this is a dangerous capability, but i suspect they would underuse it rather than overuse it
+
+        - a specific kind of important info gained during play: during play, players learn about the world the DM has crafted. *But the DM is also learning about their players*
+            - modelling the players is very important for planning and running a story. examples:
+                - do you need 10 different clues for this one threead, or are your players really good at picking up on hints?
+                - do players tend to get into trouble by running into danger headlong? how strong should the punishment for unpreparedness be given this tendency?
+                - are your players apparently uninterested in a particular storyline or character? when should you drop them for something they find cool?
 
 - experimental: explicit combat boards?
     - little interactive widgets that GM models can query or control and show the state of combat live.
@@ -107,3 +141,16 @@ The model never sees a `.md` extension on context entries — names are bare ide
             - check out what cursor did for their web browser demo project thing
 
 - note in `core.md` that replying out of narration in <md> is also appropriate when the user's requested action is impossible or doesn't make sense.
+
+- harry potter ruleset update:
+    - there really should be cantrips, i think
+    - there needs to be a way to have a much larger variety of spells
+        - for cooling a room, levitating an object, summoning an object, starting a small fire, repairing things
+        - little utility things. there aren't enough utilities and none of these are useful to justify taking them over combat/stronger spells
+    - not sure if they should still use MS. leaning yes, becuase magic should be used everywhere in this system, and MS is the only thing that makes it kind of costly
+
+- dialogue writing is still downright BAD
+    - maybe have the models do a few sample lines/passages in voice as each major character?
+        - or exchanges, or full on test scenes in made up scenarios?
+    - fable just makes every character sound like fable
+    - so many kicks. both eye kicks and some other kind. rhetorical kicks?

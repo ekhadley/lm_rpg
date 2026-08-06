@@ -24,6 +24,10 @@ bold = '\033[1m'
 underline = '\033[4m'
 endc = '\033[0m'
 
+# Story-context entries that are pulled into the system prompt by name, and the XML tag each gets.
+# Any other entry is only visible to the model through its file tools.
+PROMPT_CONTEXT_FILES = {"story_plan": "story_plan", "pc": "player_character", "story_summary": "story_summary"}
+
 # === Logging Setup ===
 
 class ColoredFormatter(logging.Formatter):
@@ -60,17 +64,23 @@ logger = setup_logger()
 
 STORIES_ROOT_DIR = "stories"
 STORIES_ARCHIVE_DIR = "stories/.archived"
+EVAL_STORIES_DIR = "eval_stories"
 INSTRUCTIONS_DIR = "instructions"
 
 def listStoryIds() -> list[str]:
     return sorted(f for f in os.listdir("./stories") if not f.startswith('.'))
 
-def resolveInstructionFile(base: str) -> str | None:
+def resolveInstructionFile(base: str, version: int | None = None) -> str | None:
     """Path of the instruction file to load for a base name (e.g. 'core', 'hp').
 
-    A numberless file (`core.md`) wins if present. Otherwise the highest-numbered
-    versioned file (`core0.md`, `core1.md`, ...) is used. Returns None if neither exists.
+    With `version`, the exact `{base}{version}.md` is required. Otherwise a numberless file
+    (`core.md`) wins if present, else the highest-numbered versioned file (`core0.md`,
+    `core1.md`, ...). Returns None if neither exists.
     """
+    if version is not None:
+        pinned = f"{INSTRUCTIONS_DIR}/{base}{version}.md"
+        assert os.path.exists(pinned), f"no instruction file {pinned}"
+        return pinned
     plain = f"{INSTRUCTIONS_DIR}/{base}.md"
     if os.path.exists(plain):
         return plain
@@ -81,6 +91,11 @@ def resolveInstructionFile(base: str) -> str | None:
         if m and (best is None or int(m.group(1)) > best[0]):
             best = (int(m.group(1)), name)
     return f"{INSTRUCTIONS_DIR}/{best[1]}" if best else None
+
+def listInstructionVersions(base: str) -> list[int]:
+    """Versions available for an instruction base, ascending (empty for a numberless-only file)."""
+    pattern = re.compile(rf"^{re.escape(base)}(\d+)\.md$")
+    return sorted(int(m.group(1)) for name in os.listdir(INSTRUCTIONS_DIR) if (m := pattern.match(name)))
 
 def _system_has_instructions(system_name: str) -> bool:
     """Returns True only if the system has an instructions file (any version)."""
@@ -94,11 +109,12 @@ def listGameSystemNames() -> list[str]:
     """Distinct system base names backed by an instruction file (versions collapsed)."""
     return sorted({re.sub(r"\d*\.md$", "", f) for f in os.listdir(INSTRUCTIONS_DIR) if f.endswith(".md") and not f.startswith("_")})
 
-def makeNewStoryDir(display_name: str, system: str, model_name: str) -> str:
-    """Create a new story directory (named by a fresh uuid) and return its id."""
+def makeNewStoryDir(display_name: str, system: str, model_name: str, root: str = STORIES_ROOT_DIR) -> str:
+    """Create a new story directory (named by a fresh uuid) under `root` and return its id.
+    `root` is EVAL_STORIES_DIR for turns captured into the prompt studio."""
     story_id = uuid.uuid4().hex[:16]
-    story_dir = f"./stories/{story_id}"
-    os.mkdir(story_dir)
+    story_dir = f"./{root}/{story_id}"
+    os.makedirs(story_dir)
     with open(os.path.join(story_dir, "info.json"), "w") as f:
         json.dump({
             "system": system,
@@ -149,9 +165,12 @@ def loadStoryInfo(story_id: str, model_name: str = None, system_name: str = None
 def historyExists(story_id: str) -> bool:
     return os.path.exists(f"./stories/{story_id}/history.json")
 
-def getFullStoryInstruction(system_name: str, files: dict[str, str]) -> str:
+def getFullStoryInstruction(system_name: str, files: dict[str, str], versions: dict[str, int] | None = None) -> str:
     """Fetches the system instructions and appends the named story-context entries (pc,
     story_plan, story_summary) pulled from the in-memory `files` dict.
+
+    `versions` pins instruction files to an exact version ({"core": 0}); bases left out
+    resolve to the latest. The prompt studio uses this to compare two versions side by side.
 
     Each section is wrapped in XML tags for clarity:
     - <core_instructions>/<system_instructions>: base instructions (real files on disk)
@@ -159,19 +178,20 @@ def getFullStoryInstruction(system_name: str, files: dict[str, str]) -> str:
     - <player_character>: The player character details
     - <story_summary>: Summary of story events so far
     """
+    versions = versions or {}
     result_parts = []
 
     # Load core instructions (required, shared across all systems)
-    with open(resolveInstructionFile("core"), 'r') as f:
+    with open(resolveInstructionFile("core", versions.get("core")), 'r') as f:
         core_instructions = f.read()
     result_parts.append(f"<core_instructions>\n{core_instructions}\n</core_instructions>")
 
     # Load system-specific instructions (required)
-    with open(resolveInstructionFile(system_name), 'r') as f:
+    with open(resolveInstructionFile(system_name, versions.get(system_name)), 'r') as f:
         system_instructions = f.read()
     result_parts.append(f"<system_instructions>\n{system_instructions}\n</system_instructions>")
 
-    for fname, tag in (("story_plan", "story_plan"), ("pc", "player_character"), ("story_summary", "story_summary")):
+    for fname, tag in PROMPT_CONTEXT_FILES.items():
         if fname in files:
             result_parts.append(f"<{tag}>\n{files[fname]}\n</{tag}>")
 
@@ -238,9 +258,10 @@ def loadAllPreviousHistory(story_id: str) -> list[dict]:
     
     return all_messages
 
-def _sourceFileState(source_dir: str) -> dict[str, str]:
-    """Reconstruct a story's current story-context files from its history tree (empty if no tree
-    or a legacy flat history, which carries no file deltas)."""
+def _sourceFileState(source_dir: str, at_start: bool = False) -> dict[str, str]:
+    """Reconstruct a story's story-context files from its history tree (empty if no tree or a
+    legacy flat history, which carries no file deltas). `at_start` gives the state at the root
+    of the active path (pre-turn-1, i.e. just the seeded context) instead of the current leaf."""
     history_path = os.path.join(source_dir, "history.json")
     if not os.path.exists(history_path):
         return {}
@@ -249,71 +270,56 @@ def _sourceFileState(source_dir: str) -> dict[str, str]:
     if "nodes" not in data:
         return {}
     tree = TurnTree.deserialize(data)
-    return tree.file_state_at(tree.current_leaf)
+    path = tree.path_to(tree.current_leaf)
+    return tree.file_state_at(path[0] if at_start and path else tree.current_leaf)
 
-def copyStory(source_story_id: str, new_name: str, new_model_name: str, copy_pc: bool = True, copy_plan: bool = True, copy_summary: bool = True, copy_history: bool = False, copy_other: bool = True) -> str | None:
+def copyStory(source_story_id: str, new_name: str, new_model_name: str, mode: str) -> str | None:
     """Copy a story into a fresh uuid directory.
 
     Args:
         source_story_id: Id (uuid directory) of the source story to copy
         new_name: Display name for the new story
         new_model_name: Model name for the new story
-        copy_pc: Copy the pc story-context entry
-        copy_plan: Copy the story_plan story-context entry
-        copy_summary: Copy the story_summary story-context entry
-        copy_history: Copy history.json and archived conversations (previous/)
-        copy_other: Copy any other story files (e.g. npc character sheets)
+        mode: "duplicate" for an exact copy (story context + full message history), or "run" for a
+            fresh story seeded with the source's setup — its story context from before the first
+            turn — and no messages
 
     Returns:
-        The new story's id if successful, None otherwise.
+        The new story's id, or None in "run" mode when the source has no setup to seed from.
     """
+    assert mode in ("duplicate", "run"), f"unknown copy mode: {mode}"
     source_dir = f"./{STORIES_ROOT_DIR}/{source_story_id}"
-    if not os.path.exists(source_dir):
+    assert os.path.exists(source_dir), f"no such story: {source_story_id}"
+
+    setup = _sourceFileState(source_dir, at_start=True) if mode == "run" else None
+    if setup == {}:  # the story context was first written during turn 1, so there is no setup
         return None
 
     new_story_id = uuid.uuid4().hex[:16]
     new_dir = f"./{STORIES_ROOT_DIR}/{new_story_id}"
+    os.makedirs(new_dir)
+    source_system = loadStoryInfo(source_story_id).get('system', 'hp')
+    with open(os.path.join(new_dir, "info.json"), "w") as f:
+        json.dump({
+            "system": source_system,
+            "model": new_model_name,
+            "story_name": new_name,
+            "created": datetime.now().isoformat(),
+        }, f, indent=4)
 
-    try:
-        # Create new directory
-        os.makedirs(new_dir, exist_ok=True)
+    # Story context lives inside the history tree, so a duplicate gets it for free along with the
+    # history; a run synthesizes a fresh tree whose hidden root carries the setup and nothing else.
+    if mode == "duplicate":
+        source_history = os.path.join(source_dir, "history.json")
+        if os.path.exists(source_history):  # absent for a story that was never played
+            shutil.copy2(source_history, os.path.join(new_dir, "history.json"))
+        source_prev_dir = getPreviousHistoryDir(source_story_id)
+        if os.path.exists(source_prev_dir):
+            shutil.copytree(source_prev_dir, getPreviousHistoryDir(new_story_id))
+    else:
+        tree = TurnTree.empty()
+        tree.add_node(None, "user", [], files=setup)
+        with open(os.path.join(new_dir, "history.json"), "w") as f:
+            json.dump({"model_name": new_model_name, "system_name": source_system, **tree.serialize()}, f, indent=4)
 
-        # Load source story info
-        source_info = loadStoryInfo(source_story_id)
-        source_system = source_info.get('system', 'hp')
-
-        # Create new info.json with new model
-        with open(os.path.join(new_dir, "info.json"), "w") as f:
-            json.dump({
-                "system": source_system,
-                "model": new_model_name,
-                "story_name": new_name,
-            }, f, indent=4)
-
-        # Story context now lives inside the history tree. Copying the whole history brings the
-        # files along; a no-history copy synthesizes a fresh tree whose hidden root carries just
-        # the selected files (so the new story opens with those files and an empty conversation).
-        if copy_history:
-            source_history = os.path.join(source_dir, "history.json")
-            if os.path.exists(source_history):
-                shutil.copy2(source_history, os.path.join(new_dir, "history.json"))
-            source_prev_dir = getPreviousHistoryDir(source_story_id)
-            if os.path.exists(source_prev_dir):
-                shutil.copytree(source_prev_dir, getPreviousHistoryDir(new_story_id))
-        else:
-            state = _sourceFileState(source_dir)
-            named = {"pc": copy_pc, "story_plan": copy_plan, "story_summary": copy_summary}
-            selected = {f: c for f, c in state.items() if (named[f] if f in named else copy_other)}
-            if selected:
-                tree = TurnTree.empty()
-                tree.add_node(None, "user", [], files=selected)
-                with open(os.path.join(new_dir, "history.json"), "w") as f:
-                    json.dump({"model_name": new_model_name, "system_name": source_system, **tree.serialize()}, f, indent=4)
-
-        return new_story_id
-    except Exception as e:
-        logger.error(f"Error copying story: {e}")
-        # Clean up on error
-        if os.path.exists(new_dir):
-            shutil.rmtree(new_dir)
-        return None
+    return new_story_id

@@ -1,4 +1,4 @@
-import { socket, debugModal, debugModalBody } from './state.js';
+import { socket, debugModal, debugModalBody, exportButton, debugPopup, debugUserCount, debugAssistantCount, debugToolCount, debugFileCount } from './state.js';
 
 function formatDebugContent(msg) {
     if (msg.role === 'assistant' && Array.isArray(msg.content)) {
@@ -152,8 +152,48 @@ function renderDebugMessages(messages) {
     debugModal.classList.add('show');
 }
 
-socket.on('debug_messages', renderDebugMessages);
+function updateDebugStats(messages) {
+    let users = 0, assistants = 0, toolCalls = 0, fileEdits = 0;
+    messages.forEach(msg => {
+        if (msg.role === 'user') users++;
+        if (msg.role === 'assistant') assistants++;
+        if (msg.tool_calls) toolCalls += msg.tool_calls.length;
+        if (msg.role === '_files') fileEdits += (msg.changed?.length || 0) + (msg.removed?.length || 0);
+    });
+    debugUserCount.textContent = users;
+    debugAssistantCount.textContent = assistants;
+    debugToolCount.textContent = toolCalls;
+    debugFileCount.textContent = fileEdits;
+}
+
+let openModalOnReceive = false;
+
+socket.on('debug_messages', (messages) => {
+    updateDebugStats(messages);
+    if (openModalOnReceive) {
+        openModalOnReceive = false;
+        renderDebugMessages(messages);
+    }
+});
 
 export function exportConversation() {
+    openModalOnReceive = true;
+    debugPopup.classList.remove('visible');
     socket.emit('get_debug_messages');
+}
+
+export function initDebugPopup() {
+    let hoverTimeout = null;
+    const show = () => {
+        clearTimeout(hoverTimeout);
+        socket.emit('get_debug_messages');
+        debugPopup.classList.add('visible');
+    };
+    const hide = () => {
+        hoverTimeout = setTimeout(() => debugPopup.classList.remove('visible'), 100);
+    };
+    exportButton.addEventListener('mouseenter', show);
+    exportButton.addEventListener('mouseleave', hide);
+    debugPopup.addEventListener('mouseenter', show);
+    debugPopup.addEventListener('mouseleave', hide);
 }

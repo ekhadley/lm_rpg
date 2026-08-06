@@ -8,24 +8,42 @@ const formatStoryDate = (ts) => {
 };
 
 import {
-    socket, storyList, chatHistory, chatHeader, welcomeWrapper, userInput,
+    socket, storyList, chatHistory, chatHeader, welcomeWrapper, userInput, floatingButtons,
     newStoryBtn, createStoryBtn, createStoryModal, createStoryModalClose, createStoryModalCancel,
     createModelSelect, createSystemSelect,
     selectStoryConfigModal, selectStoryConfigModalClose, selectStoryConfigModalCancel,
     selectStoryConfigBtn, selectStoryModelSelect, selectStorySystemSelect,
     copyStoryModal, copyStoryModalClose, copyStoryModalCancel,
     copyStoryBtn, copyStoryNameInput, copyStoryModelSelect,
-    copyPcCheckbox, copyPlanCheckbox, copySummaryCheckbox, copyOtherCheckbox, copyHistoryCheckbox,
+    copyStoryModalTitle, copyStoryModalIcon, copyStoryHint,
     currentStory, setCurrentStory,
     pendingStoryName, setPendingStoryName,
-    fileList, rightSidebar,
+    fileList, newContextFileBtn, rightSidebar,
     fileViewerOverlay, fileViewerTitle, fileViewerBody, fileViewerToc, fileViewerClose,
     fileViewerToggle, fileViewerSave, fileViewerEditor,
 } from './state.js';
 import { showTypingIndicator, showConfirmPopup, positionPopupNear } from './ui.js';
 
+// The two ways to copy a story. Both open the same modal; the mode picks its wording and is the
+// only thing the server needs, so there is nothing to tick.
+const COPY_MODES = {
+    duplicate: {
+        title: 'Duplicate Story', icon: 'fa-copy', button: 'Duplicate', suffix: ' (copy)',
+        hint: 'An exact copy: story context and the whole message history as they stand now.',
+    },
+    run: {
+        title: 'New Run', icon: 'fa-rotate-right', button: 'Create Run', suffix: ' (run 2)',
+        hint: 'The setup only: story context as it was before the first turn, with no messages. A fresh playthrough of the same starting point.',
+    },
+};
+let copyMode = 'duplicate';
+
 // Currently-open file in the viewer (for the raw/rendered toggle + editing).
 let currentFile = null, currentContent = '', rawMode = false;
+// Entry names the system prompt pulls in by name (sent with story_locked).
+let promptContextNames = new Set();
+// Set to a filename to open it in raw/edit mode when its content arrives.
+let openRawOnLoad = null;
 
 export function addStoryFileToSidebar(filename) {
     if (!fileList || !filename) return;
@@ -35,9 +53,50 @@ export function addStoryFileToSidebar(filename) {
     li.dataset.filename = filename;
     li.innerHTML = '<i class="fas fa-file-lines"></i>';
     const span = document.createElement('span');
+    span.className = 'file-item-name';
     span.textContent = filename;
     li.appendChild(span);
+    const del = document.createElement('button');
+    del.className = 'file-item-delete';
+    del.title = 'Delete entry';
+    del.innerHTML = '<i class="fas fa-trash"></i>';
+    li.appendChild(del);
     fileList.appendChild(li);
+}
+
+// Inline row for naming a new story-context entry. The hint beneath the input lights up when the
+// typed name is one the system prompt pulls in by name, or is already taken.
+function startNewContextFile() {
+    if (!fileList || fileList.querySelector('.file-item-new')) return;
+    const existing = new Set([...fileList.querySelectorAll('.file-item[data-filename]')].map(el => el.dataset.filename));
+    const li = document.createElement('li');
+    li.className = 'file-item file-item-new';
+    li.innerHTML = '<i class="fas fa-file-lines"></i>';
+    const input = document.createElement('input');
+    input.className = 'file-item-input';
+    input.placeholder = 'entry name';
+    const hint = document.createElement('div');
+    hint.className = 'file-item-hint';
+    li.append(input, hint);
+    fileList.appendChild(li);
+    input.focus();
+
+    input.addEventListener('input', () => {
+        const name = input.value.trim();
+        const taken = existing.has(name), reserved = promptContextNames.has(name);
+        li.classList.toggle('taken', taken);
+        li.classList.toggle('reserved', reserved && !taken);
+        hint.textContent = taken ? 'already exists' : reserved ? 'goes straight into the system prompt' : '';
+    });
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') input.blur();
+        if (e.key !== 'Enter') return;
+        const name = input.value.trim();
+        if (!name || existing.has(name)) return;
+        socket.emit('create_story_file', { filename: name });
+        input.blur();
+    });
+    input.addEventListener('blur', () => li.remove());
 }
 
 function setHeaderIcon(system) {
@@ -74,6 +133,7 @@ function enterStoryView({ storyId, displayName, model, system }) {
     if (chatHistory) chatHistory.innerHTML = '';
     if (welcomeWrapper) welcomeWrapper.style.display = 'none';
     if (chatHeader) chatHeader.style.display = 'flex';
+    if (floatingButtons) floatingButtons.style.display = 'flex';
     if (rightSidebar) rightSidebar.classList.add('visible');
     showTypingIndicator();
 }
@@ -140,7 +200,7 @@ export function addNewStory(story) {
     const contextMenu = document.createElement('div');
     contextMenu.className = 'story-context-menu';
     contextMenu.dataset.story = story.id;
-    contextMenu.innerHTML = '<div class="context-menu-item" data-action="rename-story"><i class="fas fa-pen"></i><span>Rename Story</span></div><div class="context-menu-item" data-action="copy-story"><i class="fas fa-copy"></i><span>Copy Story</span></div><div class="context-menu-item delete" data-action="delete-story"><i class="fas fa-trash"></i><span>Delete Story</span></div>';
+    contextMenu.innerHTML = '<div class="context-menu-item" data-action="rename-story"><i class="fas fa-pen"></i><span>Rename Story</span></div><div class="context-menu-item" data-action="copy-story" data-mode="duplicate"><i class="fas fa-copy"></i><span>Duplicate</span></div><div class="context-menu-item" data-action="copy-story" data-mode="run"><i class="fas fa-rotate-right"></i><span>New Run</span></div><div class="context-menu-item delete" data-action="delete-story"><i class="fas fa-trash"></i><span>Delete Story</span></div>';
 
     li.appendChild(icon);
     li.appendChild(contentDiv);
@@ -227,9 +287,15 @@ export function initStory() {
                 const storyItem = menuItem.closest('.story-item');
                 setPendingStoryName(storyItem.getAttribute('data-story'));
                 const displayName = storyItem.querySelector('.story-name').textContent;
+                copyMode = menuItem.dataset.mode;
                 menuItem.closest('.story-context-menu').classList.remove('show');
                 if (copyStoryModal) {
-                    if (copyStoryNameInput) copyStoryNameInput.value = displayName + ' (copy)';
+                    const preset = COPY_MODES[copyMode];
+                    copyStoryModalTitle.textContent = preset.title;
+                    copyStoryModalIcon.className = 'fas ' + preset.icon;
+                    copyStoryHint.textContent = preset.hint;
+                    copyStoryBtn.textContent = preset.button;
+                    if (copyStoryNameInput) copyStoryNameInput.value = displayName + preset.suffix;
                     const storyModel = storyItem.getAttribute('data-model');
                     if (copyStoryModelSelect && storyModel && copyStoryModelSelect.querySelector('option[value="' + CSS.escape(storyModel) + '"]')) {
                         copyStoryModelSelect.value = storyModel;
@@ -368,11 +434,7 @@ export function initStory() {
                 source_story: pendingStoryName,
                 new_story_name: newName,
                 model_name: modelName,
-                copy_pc: copyPcCheckbox ? copyPcCheckbox.checked : true,
-                copy_plan: copyPlanCheckbox ? copyPlanCheckbox.checked : true,
-                copy_summary: copySummaryCheckbox ? copySummaryCheckbox.checked : true,
-                copy_other: copyOtherCheckbox ? copyOtherCheckbox.checked : true,
-                copy_history: copyHistoryCheckbox ? copyHistoryCheckbox.checked : true,
+                mode: copyMode,
             });
             closeCopyStoryModal();
         });
@@ -392,6 +454,7 @@ export function initStory() {
             if (chatHistory) chatHistory.innerHTML = '';
             if (welcomeWrapper) welcomeWrapper.style.display = '';
             if (chatHeader) chatHeader.style.display = 'none';
+            if (floatingButtons) floatingButtons.style.display = 'none';
             if (rightSidebar) rightSidebar.classList.remove('visible');
             if (fileList) fileList.innerHTML = '';
         }
@@ -426,6 +489,7 @@ export function initStory() {
             });
         }
         // Populate right sidebar file list
+        promptContextNames = new Set(data.prompt_context_names || []);
         if (fileList) {
             fileList.innerHTML = '';
             (data.story_context || []).forEach(addStoryFileToSidebar);
@@ -442,9 +506,28 @@ export function initStory() {
         fileList.addEventListener('click', function(e) {
             const item = e.target.closest('.file-item');
             if (!item || !item.dataset.filename) return;
-            socket.emit('get_story_file', { filename: item.dataset.filename });
+            const name = item.dataset.filename;
+            if (e.target.closest('.file-item-delete')) {
+                e.stopPropagation();  // else the document listener that dismisses the popup sees this same click
+                showConfirmPopup('Delete "' + name + '" from this branch?', () => socket.emit('delete_story_file', { filename: name }), item);
+                return;
+            }
+            socket.emit('get_story_file', { filename: name });
         });
     }
+    if (newContextFileBtn) newContextFileBtn.addEventListener('click', startNewContextFile);
+
+    socket.on('story_file_created', function(data) {
+        addStoryFileToSidebar(data.filename);
+        openRawOnLoad = data.filename;  // a new entry is empty, so drop straight into the editor
+        socket.emit('get_story_file', { filename: data.filename });
+    });
+
+    socket.on('story_file_deleted', function(data) {
+        const item = fileList && fileList.querySelector('.file-item[data-filename="' + data.filename + '"]');
+        if (item) item.remove();
+        if (currentFile === data.filename && fileViewerOverlay) fileViewerOverlay.classList.remove('show');
+    });
 
     // System instructions click handler
     const sysInstrBtn = document.getElementById('system-instructions-btn');
@@ -459,7 +542,8 @@ export function initStory() {
         currentContent = data.content;
         fileViewerTitle.textContent = data.filename;
         fileViewerToggle.style.display = data.editable ? '' : 'none';
-        setRawMode(false);
+        setRawMode(openRawOnLoad === data.filename);
+        openRawOnLoad = null;
         fileViewerOverlay.classList.add('show');
     });
 
@@ -653,7 +737,7 @@ export function initStory() {
         document.addEventListener('mousemove', function(e) {
             if (!isResizing) return;
             const newWidth = Math.max(140, Math.min(500, window.innerWidth - e.clientX));
-            rightSidebar.style.width = newWidth + 'px';
+            document.documentElement.style.setProperty('--right-sidebar-width', newWidth + 'px');
         });
         document.addEventListener('mouseup', function() {
             if (!isResizing) return;

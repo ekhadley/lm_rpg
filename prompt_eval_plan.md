@@ -1,125 +1,100 @@
-# Prompt Eval Harness (A/B, LLM judge, story-copy fixtures)
+# Prompt Studio — side-by-side completions across instruction versions
 
 ## Context
 
-The GM's behavior is driven entirely by the on-disk instruction files (`instructions/core{N}.md`,
-`instructions/{system}{N}.md`), which now carry integer **versions** (`core0.md`, `core1.md`, …; the
-resolver in `utils.py:_resolveInstructionFile` takes the highest version by default). There is currently
-no way to tell whether editing those instructions makes the GM *better* or *worse* — changes are judged
-by feel.
+Instruction files carry integer versions (`core0.md`, `core1.md`, …; `utils._resolveInstructionFile`
+takes the highest by default). There's no way to see what a prompt edit actually changes about GM
+behavior — it's judged by feel.
 
-This adds an offline **A/B prompt-eval harness**: freeze a library of game situations, run the GM on each
-under two instruction versions (e.g. `core0` vs `core1`), and have an LLM judge pick the better response
-pairwise. Output is JSON for now; a viewer comes later. The goal is a reproducible "did this edit help?"
-signal, decoupled from the live SocketIO app.
+**v1 is a comparison tool, not an eval.** No judging, no rubric, no scoring. It generates completions
+side by side from the *same model* at the *same story point* under *two different instruction versions*,
+so differences can be read directly. Automatic judging + rubrics come later and will consume the JSON
+this writes.
 
-## Approach
+Note: `core1.md` is currently `core0.md` minus the `## Self-Evaluation` section, and nothing in the code
+ever sends the System instructions that section describes — so that particular pair is expected to show
+little difference. It's a smoke test for the tool, not a meaningful comparison.
 
-- A **scenario** is a frozen copy of a real story, stored in a new `./eval_stories/<id>/` directory using
-  the *exact same on-disk shape* as `./stories/` (`info.json` + `history.json`). Each scenario's eval
-  point is its **leaf turn**: the harness re-generates the leaf assistant node's response to its parent
-  user message. Capturing a different point = capture another fork to that node.
-- A **variant** is a version pick per instruction base, e.g. `{"core": 0}`. Unspecified bases fall back to
-  the resolved-latest (production) behavior.
-- Both the **GM model** and **judge model** are chosen at run time (CLI flags), mirroring how models are
-  picked per-story in the app.
-- The harness is a standalone script with **no SocketIO** — it drives `OpenRouterProvider` directly with
-  the existing no-op `CallbackHandler` base class (`callbacks.py:4`), so no new callback code is needed.
+## Shape
 
-### Headless turn run (mirrors `narrator.regenerate_turn`)
+- **Capture**: a button on any assistant turn copies the story state *at that point* into
+  `./eval_stories/<id>/` (same on-disk shape as `./stories/`). It does **not** switch views.
+- **Studio mode**: a toggle at the top of the left sidebar. On, the sidebar lists captured test turns
+  (like the story list). Grouping/organization comes later.
+- **Compare**: pick a test turn → choose an instruction base (default `core`), version **A** and version
+  **B**, N completions per version, and a model → generate **2N** completions, streamed live into two
+  columns.
+- Studio runs never touch the story tree or the global narrator; each completion gets its own provider
+  over its own `files` copy, read from the frozen test turn.
 
-For an eval story loaded as a `TurnTree` (`history.TurnTree.deserialize`):
-1. `leaf = tree.current_leaf` (must be an assistant node; skip with a warning otherwise).
-2. `parent = nodes[leaf]["parent"]` — the user node whose input we respond to.
-3. `before = tree.file_state_at(parent)`; `prefix = tree.messages_to(parent)`.
-4. Build the system prompt with the variant's pinned versions:
-   `getFullStoryInstruction(system, before, versions=variant)`.
-5. `tb = SYSTEM_TOOLBOXES[system](files)` over a fresh `files = dict(before)` (file tools may mutate it).
-6. `provider = OpenRouterProvider(gm_model, tb, CallbackHandler(), thinking_effort="max", cache_mode="none")`;
-   `provider.messages = [system_msg] + prefix`; `provider.run()`.
-7. Output = messages produced after the prefix → extract `{narration, tool_calls, cost}`
-   (narration = assistant `content`; tool calls from `tool_calls`; cost from `provider.getCostStats()`).
+## Backend
 
-### Pairwise judge (position-bias guarded)
+### `utils.py`
+- `_resolveInstructionFile(base, version=None)` — when `version` is given, return
+  `{INSTRUCTIONS_DIR}/{base}{version}.md` and assert it exists (loud, no fallback); else current logic.
+- `getFullStoryInstruction(system_name, files, versions=None)` — thread a `{base: int}` dict into the
+  `core` and `system_name` lookups. `versions=None` → unchanged production behavior, so `narrator.py`
+  needs no edits.
+- `listInstructionVersions(base) -> list[int]` — powers the UI version picker.
+- `makeNewStoryDir(display_name, system, model_name, root=STORIES_ROOT_DIR)` — add `root` so captures
+  land in `eval_stories/`.
+- `EVAL_STORIES_DIR = "eval_stories"`.
 
-- Judge = `OpenRouterProvider(judge_model, Toolbox([]), CallbackHandler())` (empty toolbox → no tools;
-  `Toolbox([])` is valid per `model_tools.py:71`). One system+user message pair, read the final assistant
-  content.
-- The judge sees: recent context (last ~2 turns of `prefix` + `story_plan`/`pc` from `before`), the user
-  input, and two candidate continuations labeled **Response 1** / **Response 2** (A/B identity hidden).
-  Rubric drawn from the GM goals in `core{N}.md` (voice, pacing, tool/rule correctness, no railroading,
-  story-plan consistency). Judge must end with `VERDICT: 1` / `VERDICT: 2` / `VERDICT: tie`.
-- Run **both orderings** (order1: 1=A,2=B; order2: 1=B,2=A). **A wins** only if the judge picks A in both
-  orderings; **B wins** only if it picks B both times; otherwise **tie**. Kills position bias for one
-  extra judge call.
+### `narrator.py`
+- `fork_to(node_id, new_name, root=STORIES_ROOT_DIR)` — add `root`. Capture is then just
+  `fork_to(turn_id, name, root=EVAL_STORIES_DIR)`; the existing path-trimming logic is reused as-is.
 
-## Files
+### `callbacks.py`
+- `StudioCallbackHandler(CallbackHandler)` — emits `studio_*` events, each payload tagged
+  `{run_id, lane}`. Separate event names keep studio traffic away from the chat view's global handlers.
 
-### Modify `utils.py` (small, reuse-only)
-- `_resolveInstructionFile(base, version=None)`: when `version` is given, return
-  `f"{INSTRUCTIONS_DIR}/{base}{version}.md"` and assert it exists (loud error, no fallback); else current
-  highest-version logic unchanged.
-- `getFullStoryInstruction(system_name, files, versions=None)`: thread `versions` (a `{base: int}` dict)
-  into the two `_resolveInstructionFile` calls for `core` and `system_name`. `versions=None` → unchanged
-  production behavior, so `narrator.py` callers need no edits.
+### `studio.py` (new)
+- `runStudio(eval_id, base, ver_a, ver_b, n, model, socket, run_id)`:
+  1. load `eval_stories/<id>/history.json` → `TurnTree.deserialize`; `info.json` → system.
+  2. `leaf = tree.current_leaf`; `parent = nodes[leaf]["parent"]`;
+     `before = tree.file_state_at(parent)`; `prefix = tree.messages_to(parent)`.
+  3. For each of the 2N lanes, `socket.start_background_task`:
+     `files = dict(before)`; `tb = SYSTEM_TOOLBOXES[system](files)`;
+     `provider = OpenRouterProvider(model, tb, StudioCallbackHandler(socket, run_id, lane),
+     thinking_effort="max", cache_mode="none")`;
+     `provider.messages = [systemMsg(versions={base: ver})] + prefix`; `provider.run()`.
+  4. As lanes finish, collect results; when the last completes, write
+     `eval_stories/<id>/runs/<ts>.json` (config + per-lane narration/tool_calls/cost).
 
-### New `eval.py` (root, standalone CLI)
-Subcommands:
-- `capture <story_id> [node_id] --name X` — copy a story into `./eval_stories/<new_id>/`. Whole-story copy
-  when no `node_id` (preserves source `current_leaf`); for a `node_id`, trim to the linear path
-  root→node like `narrator.fork_to` (`narrator.py:305`) and set `current_leaf=node_id`. Write
-  `info.json` (`{system, model, story_name, created, "enabled": true}`) + `history.json` verbatim/trimmed.
-- `list` — print each eval story's name + `enabled`.
-- `enable <id>` / `disable <id>` — flip the `enabled` flag in its `info.json`.
-- `run --a core=0 --b core=1 [--gm MODEL] [--judge MODEL]` — for each **enabled** eval story: headless GM
-  run under A and B, pairwise judge, accumulate. `--a`/`--b` parse comma-separated `base=ver` into
-  `{base:int}` (empty/omitted → latest). `--gm` overrides the GM model for both variants (default: each
-  story's own `info.json` model, so A vs B differ only in instructions). `--judge` default
-  `anthropic/claude-opus-4.8`. Writes `./evals/results/<timestamp>.json`.
+Parallelism is safe: no eventlet/gevent installed → Flask-SocketIO runs in **threading** mode, `requests`
+blocks per thread, and `socket.emit` works from background threads. Default **N=1** (2N concurrent
+max-effort turns is a real cost burst).
 
-Result JSON shape:
-```json
-{
-  "timestamp": "...", "gm_model": "...", "judge_model": "...",
-  "variant_a": {"core": 0}, "variant_b": {"core": 1},
-  "scenarios": [{
-    "id": "...", "name": "...", "system": "twd", "user_input": "...",
-    "out_a": {"narration": "...", "tool_calls": [...], "cost": 0.0},
-    "out_b": {"narration": "...", "tool_calls": [...], "cost": 0.0},
-    "order_verdicts": ["1", "2"], "verdict": "A|B|tie", "rationale": "..."
-  }],
-  "aggregate": {"a_wins": 0, "b_wins": 0, "ties": 0, "total_cost": 0.0}
-}
-```
+### `app.py` — socket events
+`capture_eval_turn` {turn_id, name} · `list_eval_turns` · `delete_eval_turn` · `studio_run`
+{eval_id, base, ver_a, ver_b, n, model} · `get_instruction_versions` {base}
 
-### New directories (created at runtime)
-- `./eval_stories/` — frozen scenario corpus (git-trackable).
-- `./evals/results/` — per-run JSON reports.
+## Frontend
 
-### Reused as-is (no change)
-- `callbacks.CallbackHandler` (no-op base) — headless callbacks.
-- `openrouter.OpenRouterProvider` — `.messages`, `.run()`, `.getCostStats()`.
-- `history.TurnTree` — `deserialize`, `file_state_at`, `messages_to`, `path_to`.
-- `model_tools.SYSTEM_TOOLBOXES` / `Toolbox([])`.
+Streaming is **reused, not rebuilt** — the renderers are already lane-ready:
+- `reasoningRow.js` — `ensureRow/appendReasoning/appendTool/appendDice/closeRows` all already take a
+  `wrapper`. Only change: `ensureLiveWrapper(container = chatHistory)`.
+- `chat.js` — export `processNarration` and `appendNarration(wrapper, content)` (already
+  wrapper-parameterized).
+- A studio lane is then just "a wrapper element in a column"; every existing renderer works unchanged.
 
-## Notes / risks
-- Empty-tools judge request: `Toolbox([])` yields `tools: []` in the request. If OpenRouter rejects an
-  empty `tools` array, fall back to a tiny non-streaming `requests.post` judge helper. Verify during
-  implementation.
-- An eval story whose leaf isn't an assistant node (or whose parent is missing) is skipped with a logged
-  warning rather than crashing the run.
-- `cache_mode="none"` for GM runs — A/B prefixes differ by the system block anyway, so caching buys little
-  and keeps runs independent.
+New:
+- `frontend/static/studio.js` — sidebar Stories/Studio toggle, captured-turn list, studio view
+  (2 columns × N lanes), version/model/N pickers, `studio_*` handlers routing `{run_id, lane}` → wrapper.
+- Per-turn capture button — mirrors the existing per-turn actions in `messageActions.js`.
+- `styles.css` — studio layout, following the existing conventions (no `transition: all`, concentric
+  radii, `tabular-nums` on live numbers).
+
+## Deferred (explicitly not v1)
+Automatic judging, rubrics, scoring, aggregate win rates; grouping/organizing captured turns; a results
+viewer over `runs/*.json`.
 
 ## Verification
-1. `python eval.py capture <existing_story_id> --name "smoke"` → confirm `./eval_stories/<id>/` has
-   `info.json` (with `enabled: true`) + `history.json`; `python eval.py list` shows it.
-2. Create a trivial second core version (e.g. copy `core0.md` → `core1.md` with one line changed) so A/B
-   has something to differ on.
-3. `python eval.py run --a core=0 --b core=1 --judge anthropic/claude-opus-4.8` → confirm a
-   `./evals/results/<ts>.json` appears with both `out_a`/`out_b` narration populated, a `verdict`, a
-   `rationale`, and a sane `aggregate` (wins + ties == scenario count, `total_cost` > 0).
-4. Sanity-check the rendered narrations read like real GM turns (tool calls present where the scenario
-   warrants a dice roll), and that swapping `--a`/`--b` flips the win counts symmetrically.
-5. Confirm production is untouched: launch `python app.py`, open a story, take a normal turn — instruction
-   resolution still uses the latest version (`getFullStoryInstruction` called with `versions=None`).
+1. Capture a turn from a story → `./eval_stories/<id>/` has `info.json` + `history.json`; the story is
+   untouched and the view doesn't switch.
+2. Toggle Studio in the sidebar → the captured turn is listed; select it.
+3. Run `core` 0 vs 1, N=1 → two columns stream live and complete; reasoning rows and tool calls render
+   like the chat view. Confirm `eval_stories/<id>/runs/<ts>.json` is written.
+4. Run with N=2 → 4 lanes stream concurrently into the right columns (no cross-talk between lanes).
+5. Confirm production is untouched: normal chat turn still streams correctly and still resolves the
+   latest instruction version (`getFullStoryInstruction` called with `versions=None`).
