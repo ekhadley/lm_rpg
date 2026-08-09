@@ -84,6 +84,7 @@ Captured turns live in `eval_stories/{id}/`, shaped like a story (`info.json`, `
 
 - Cyberpunk RED hard system
 
+
 - blind scoring on top of the prompt studio
     - lm-arena type loop: generate turns with prompt A and prompt B, pick the preferred one of a pair without knowing which is which, show win% at the end
     - currently the columns are labelled and unscored, so it's just eyeballing
@@ -124,13 +125,6 @@ Captured turns live in `eval_stories/{id}/`, shaped like a story (`info.json`, `
     - image gen for backgrounds/character models?
     - could be pre-prepped
 
-- general issue with dnd: relying on pretraining memory alone leads to lots of rule edition confusions. it really likes 2014 rules it seems?
-    - ACTUALLY the story plan itself gives instruction for 2014. so that clearly needs fixing
-    - not sure what the solution is here.
-    - sub agent for searching rules?
-    - maybe just putting a small bit of 2024-specific content in the system rules will key it in better?
-    - wait for better model?
-
 - framework for story plan generation?
     - this is of course ideally part of the main app, but I still have no idea what the right workflow is for creating good plans.
         - need to play with the hp system more I think to nail this down
@@ -146,7 +140,7 @@ Captured turns live in `eval_stories/{id}/`, shaped like a story (`info.json`, `
     - there really should be cantrips, i think
     - there needs to be a way to have a much larger variety of spells
         - for cooling a room, levitating an object, summoning an object, starting a small fire, repairing things
-        - little utility things. there aren't enough utilities and none of these are useful to justify taking them over combat/stronger spells
+        - little utility things. there aren't enough existing utility spells and even if there were, none of these are useful to justify taking them over combat/stronger spells
     - not sure if they should still use MS. leaning yes, becuase magic should be used everywhere in this system, and MS is the only thing that makes it kind of costly
 
 - dialogue writing is still downright BAD
@@ -154,3 +148,9 @@ Captured turns live in `eval_stories/{id}/`, shaped like a story (`info.json`, `
         - or exchanges, or full on test scenes in made up scenarios?
     - fable just makes every character sound like fable
     - so many kicks. both eye kicks and some other kind. rhetorical kicks?
+
+- actually try out self-review
+    - currently some versions of the core instructions say there is some other 'System' character that will direct the model to do pre-narration planning turens, self review turns, etc
+    - I've ocasionally manually put these in, and I can't tell if it helps
+        - it seems unlikely to help with writing quality/voice/adding entropy, which is maybe the biggest thing to improve on atm
+            - it may even make it worse for this. quite possibly more extended reasoning leads to less entropy and more convergence

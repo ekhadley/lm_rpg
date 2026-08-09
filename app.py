@@ -352,15 +352,13 @@ def delete_eval_turn(data: dict[str, str]):
 
 @socket.on('studio_run')
 def studio_run(data: dict):
-    """Generate n completions per instruction version for a captured turn, streamed lane by lane."""
+    """Generate n completions per arm (model + instruction version) for a captured turn, streamed lane by lane."""
     runStudio(
         socket,
         eval_id=data['eval_id'],
         base=data.get('base', 'core'),
-        ver_a=int(data['ver_a']),
-        ver_b=int(data['ver_b']),
+        arms=[{"model": a['model'], "version": int(a['version'])} for a in data['arms']],
         n=int(data.get('n', 1)),
-        model=data['model'],
         cache=bool(data.get('cache', True)),
     )
 
