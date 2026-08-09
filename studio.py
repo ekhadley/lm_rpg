@@ -10,10 +10,11 @@ from model_tools import SYSTEM_TOOLBOXES
 from openrouter import OpenRouterProvider
 from callbacks import StudioCallbackHandler
 
-# The prompt studio regenerates one captured turn under two instruction versions at once, so the
-# versions can be read side by side. A captured turn lives in ./eval_stories/<id>/ with the exact
-# on-disk shape of a story (info.json + history.json) — it is a fork of the source story trimmed to
-# the turn, so the state is frozen and the source is untouched.
+# The studio regenerates one captured turn under two arms at once, so they can be read side by side.
+# An arm is a (model, instruction version) pair, so a run can vary the model, the prompt, or both.
+# A captured turn lives in ./eval_stories/<id>/ with the exact on-disk shape of a story (info.json +
+# history.json) — it is a fork of the source story trimmed to the turn, so the state is frozen and
+# the source is untouched.
 #
 # A studio run never touches the live narrator or any story tree: each lane builds its own provider
 # over its own copy of the turn's story context.
@@ -64,9 +65,8 @@ def listRuns(eval_id: str) -> list[dict]:
     for name in os.listdir(runs_dir):
         with open(f"{runs_dir}/{name}") as f:
             run = json.load(f)
-        runs.append({"file": name, "started": run["started"], "model": run["model"], "n": run["n"],
-                     "base": run["base"], "versions": run["versions"],
-                     "cost": sum(l["cost"] for l in run["lanes"].values())})
+        runs.append({"file": name, "started": run["started"], "n": run["n"], "base": run["base"],
+                     "arms": run["arms"], "cost": sum(l["cost"] for l in run["lanes"].values())})
     return sorted(runs, key=lambda r: r["started"], reverse=True)
 
 def _replayEvents(messages: list[dict]) -> list[dict]:
@@ -94,22 +94,22 @@ def loadRun(eval_id: str, file: str) -> dict:
     run["lanes"] = {lane: {"cost": l["cost"], "events": _replayEvents(l["messages"])} for lane, l in run["lanes"].items()}
     return run
 
-def _runLane(socket: SocketIO, cfg: dict, lane: str, version: int, prefix: list[dict], before: dict, state: dict,
+def _runLane(socket: SocketIO, cfg: dict, lane: str, arm: dict, prefix: list[dict], before: dict, state: dict,
              gate: threading.Event | None, is_primer: bool) -> None:
-    # With caching on, one lane per version goes first and the rest wait for it to start producing
+    # With caching on, one lane per arm goes first and the rest wait for it to start producing
     # output — by then the shared prefix is cached, so they read it instead of paying to write it again.
     if gate is not None and not is_primer:
         gate.wait()
     files = dict(before)  # this lane's own copy — the file tools mutate it during the run
     tb = SYSTEM_TOOLBOXES[cfg["system"]](files)
     provider = OpenRouterProvider(
-        model_name=cfg["model"],
+        model_name=arm["model"],
         toolbox=tb,
         callback_handler=StudioCallbackHandler(socket, cfg["run_id"], lane, gate if is_primer else None),
         thinking_effort="max",
         cache_mode=cfg["cache_mode"],
     )
-    system_prompt = getFullStoryInstruction(cfg["system"], before, versions={cfg["base"]: version})
+    system_prompt = getFullStoryInstruction(cfg["system"], before, versions={cfg["base"]: arm["version"]})
     block = {"type": "text", "text": system_prompt}
     if (cc := provider.cacheControl()) is not None:
         block["cache_control"] = cc
@@ -123,7 +123,7 @@ def _runLane(socket: SocketIO, cfg: dict, lane: str, version: int, prefix: list[
     cost = provider.getCostStats()["total_cost"]
     socket.emit('studio_lane_end', {"run_id": cfg["run_id"], "lane": lane, "cost": cost})
     with state["lock"]:
-        state["lanes"][lane] = {"version": version, "messages": provider.messages[len(prefix) + 1:], "cost": cost}
+        state["lanes"][lane] = {"messages": provider.messages[len(prefix) + 1:], "cost": cost}
         done = len(state["lanes"]) == state["total"]
     if done:
         path = _saveRun(cfg, state["lanes"])
@@ -131,20 +131,21 @@ def _runLane(socket: SocketIO, cfg: dict, lane: str, version: int, prefix: list[
         socket.emit('studio_run_end', {"run_id": cfg["run_id"], "path": path,
                                        "cost": sum(l["cost"] for l in state["lanes"].values())})
 
-def runStudio(socket: SocketIO, eval_id: str, base: str, ver_a: int, ver_b: int, n: int, model: str, cache: bool) -> str:
-    """Generate n completions per version for a captured turn, streaming each into its own lane.
+def runStudio(socket: SocketIO, eval_id: str, base: str, arms: list[dict], n: int, cache: bool) -> str:
+    """Generate n completions per arm for a captured turn, streaming each into its own lane.
     Lanes run concurrently as background tasks (SocketIO is in threading mode, so the blocking
-    request in each provider gets its own thread). The two versions differ in their system prompt —
-    the first block — so they share no cacheable prefix and get a staggering gate each."""
+    request in each provider gets its own thread). Each arm has its own model and its own system
+    prompt — the first block — so arms share no cacheable prefix and get a staggering gate each."""
     info, prefix, before = _turnContext(eval_id)
-    cfg = {"run_id": uuid.uuid4().hex[:8], "eval_id": eval_id, "base": base, "versions": [ver_a, ver_b],
-           "n": n, "model": model, "system": info["system"], "cache": cache,
-           "cache_mode": "5m" if cache else "none", "started": datetime.now().isoformat()}
-    gates = {ver: threading.Event() for ver in (ver_a, ver_b)} if cache and n > 1 else {}
-    lanes = [(f"v{ver}-{i}", ver, i == 0) for ver in (ver_a, ver_b) for i in range(n)]
+    cfg = {"run_id": uuid.uuid4().hex[:8], "eval_id": eval_id, "base": base, "arms": arms, "n": n,
+           "system": info["system"], "cache": cache, "cache_mode": "5m" if cache else "none",
+           "started": datetime.now().isoformat()}
+    sides = list(zip("ab", arms))
+    gates = {side: threading.Event() for side, _ in sides} if cache and n > 1 else {}
+    lanes = [(f"{side}-{i}", side, arm, i == 0) for side, arm in sides for i in range(n)]
     state = {"lanes": {}, "total": len(lanes), "lock": threading.Lock()}
 
-    socket.emit('studio_run_started', {**cfg, "lanes": [lane for lane, _, _ in lanes]})
-    for lane, ver, is_primer in lanes:
-        socket.start_background_task(_runLane, socket, cfg, lane, ver, prefix, before, state, gates.get(ver), is_primer)
+    socket.emit('studio_run_started', {**cfg, "lanes": [lane for lane, _, _, _ in lanes]})
+    for lane, side, arm, is_primer in lanes:
+        socket.start_background_task(_runLane, socket, cfg, lane, arm, prefix, before, state, gates.get(side), is_primer)
     return cfg["run_id"]
