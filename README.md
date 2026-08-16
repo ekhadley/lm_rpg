@@ -72,17 +72,18 @@ The model never sees a `.md` extension on context entries — names are bare ide
 
 ## Prompt studio
 
-The toggle above the sidebar switches between **Play** and **Studio**. The studio answers one question: what does this exact turn look like under a different version of the instructions?
+The toggle above the sidebar switches between **Play** and **Studio**. The studio answers one question: what does this exact turn look like under a different version of the instructions, or a different model?
 
-Capture a turn from the chat (the fork action, aimed at `eval_stories/` instead of `stories/`) and it is frozen — the messages up to the player message being answered, plus the story context as of that point. In the studio you pick two core versions, a model, and how many completions to generate per version. Each completion gets its own column, streaming reasoning, narration, and tool calls live, side by side.
+Capture a turn from the chat (the fork action, aimed at `eval_stories/` instead of `stories/`) and it is frozen — the messages up to the player message being answered, plus the story context as of that point. In the studio you pick two **arms** — each a model plus a core version, so the two sides can differ in the prompt, the model, or both — and how many completions to generate per arm. Each completion gets its own column, streaming reasoning, narration, and tool calls live, side by side.
 
-Lanes are fully independent: each builds its own model client over its own copy of the story context, so a run never touches the live game or any story. With caching on, one lane per version goes first and the others wait for it to start producing output, by which point they read the shared prefix from cache instead of each paying to write it.
+Lanes are fully independent: each builds its own model client over its own copy of the story context, so a run never touches the live game or any story. With caching on, one lane per arm goes first and the others wait for it to start producing output, by which point they read the shared prefix from cache instead of each paying to write it.
 
 Captured turns live in `eval_stories/{id}/`, shaped like a story (`info.json`, `history.json`) plus a `runs/` folder. Finished runs are saved there and can be reloaded from the dropdown.
 
 ## TODO
 
 - Cyberpunk RED hard system
+
 
 - blind scoring on top of the prompt studio
     - lm-arena type loop: generate turns with prompt A and prompt B, pick the preferred one of a pair without knowing which is which, show win% at the end
@@ -125,13 +126,6 @@ Captured turns live in `eval_stories/{id}/`, shaped like a story (`info.json`, `
     - image gen for backgrounds/character models?
     - could be pre-prepped
 
-- general issue with dnd: relying on pretraining memory alone leads to lots of rule edition confusions. it really likes 2014 rules it seems?
-    - ACTUALLY the story plan itself gives instruction for 2014. so that clearly needs fixing
-    - not sure what the solution is here.
-    - sub agent for searching rules?
-    - maybe just putting a small bit of 2024-specific content in the system rules will key it in better?
-    - wait for better model?
-
 - framework for story plan generation?
     - this is of course ideally part of the main app, but I still have no idea what the right workflow is for creating good plans.
         - need to play with the hp system more I think to nail this down
@@ -147,7 +141,7 @@ Captured turns live in `eval_stories/{id}/`, shaped like a story (`info.json`, `
     - there really should be cantrips, i think
     - there needs to be a way to have a much larger variety of spells
         - for cooling a room, levitating an object, summoning an object, starting a small fire, repairing things
-        - little utility things. there aren't enough utilities and none of these are useful to justify taking them over combat/stronger spells
+        - little utility things. there aren't enough existing utility spells and even if there were, none of these are useful to justify taking them over combat/stronger spells
     - not sure if they should still use MS. leaning yes, becuase magic should be used everywhere in this system, and MS is the only thing that makes it kind of costly
 
 - dialogue writing is still downright BAD

@@ -359,17 +359,12 @@ def delete_eval_turn(data: dict[str, str]):
 
 @socket.on('studio_run')
 def studio_run(data: dict):
-    """Generate n completions per core version for a captured turn, streamed lane by lane."""
-    if data['ver_a'] == data['ver_b']:  # lanes are keyed by version, so the two columns must differ
-        emit('error', {"message": "Pick two different core versions"})
-        return
+    """Generate n completions per arm (model + core version) for a captured turn, streamed lane by lane."""
     runStudio(
         socket,
         eval_id=data['eval_id'],
-        ver_a=data['ver_a'],
-        ver_b=data['ver_b'],
+        arms=[{"model": a['model'], "version": a['version']} for a in data['arms']],
         n=int(data.get('n', 1)),
-        model=data['model'],
         cache=bool(data.get('cache', True)),
     )
 
