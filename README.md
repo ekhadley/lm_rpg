@@ -23,7 +23,7 @@ Runs on `http://localhost:5001`. Set `DEBUG=1` for verbose logging.
 
 ## How It Works
 
-The LM receives a system prompt assembled from a core instructions file (core.md) and (optionally) story-specific context: a story plan, player character sheet, and running summary. It responds with narration and can make tool calls — rolling dice, reading/writing named entries of story context — to manage game state across turns.
+The LM receives a system prompt assembled from the story's core instructions file and (optionally) story-specific context: a story plan, player character sheet, and running summary. It responds with narration and can make tool calls — rolling dice, reading/writing named entries of story context — to manage game state across turns.
 
 Story context is not stored as files on disk. It's a keyed collection of text the model reads and writes through its tools; the authoritative copy lives inside the conversation history (see [Story context](#story-context-and-rollback) below). Conversations are stored as JSON in each story's directory and can be archived to start fresh while keeping history accessible.
 
@@ -31,14 +31,14 @@ Story context is not stored as files on disk. It's a keyed collection of text th
 
 A game system is defined by:
 
-- `instructions.md` — the ruleset and world context the LM follows
-- Optionally, a `tools.py` providing system-specific tools (e.g. character sheet manipulation)
+- `instructions/systems/{name}.md` — the ruleset and world context the LM follows
+- A toolbox factory registered in `model_tools.SYSTEM_TOOLBOXES`, adding the system's dice tool to the shared file tools
 
-The core instructions (`instructions/core*.md`) define system-agnostic GM behavior: how to handle player intent, when to roll dice, how to narrate. Each game system's instructions layer on top of that with specific mechanics and setting.
+The core instructions (`instructions/core/{version}.md`) define system-agnostic GM behavior: how to handle player intent, when to roll dice, how to narrate. Each game system's instructions layer on top of that with specific mechanics and setting.
 
-Instruction files are versioned by a trailing number (`core1.md`, `core2.md`, …). The highest number is what play uses; older versions are kept so the [prompt studio](#prompt-studio) can run two of them head to head.
+Each file in `instructions/core/` is one **core version**, named freely (`self_review.md`, `no_review.md`). A story picks its version when you create it and keeps it for life, so different stories can run different core instructions; the [prompt studio](#prompt-studio) runs two versions head to head. New stories default to the version chosen in the settings popup. Game system files (`instructions/systems/{name}.md`) are not versioned.
 
-Game systems are divided into 'hard' systems and 'soft' systems. Hard systems are more like typical DnD (more dice rolling, characters with speficic stat sheets, predefined ability mechanics, etc), soft systems are more like a choose your own adventure type resolution system (outcomes determined more by holistic GM discretion and narrative considerations), although dice are still used where randomness is needed. core.md references both types and how to run them.
+Game systems are divided into 'hard' systems and 'soft' systems. Hard systems are more like typical DnD (more dice rolling, characters with speficic stat sheets, predefined ability mechanics, etc), soft systems are more like a choose your own adventure type resolution system (outcomes determined more by holistic GM discretion and narrative considerations), although dice are still used where randomness is needed. The core instructions reference both types and how to run them.
 
 Current systems include D&D 5e (hard), Harry Potter (hard), and Game of Thrones (soft).
 
@@ -74,7 +74,7 @@ The model never sees a `.md` extension on context entries — names are bare ide
 
 The toggle above the sidebar switches between **Play** and **Studio**. The studio answers one question: what does this exact turn look like under a different version of the instructions?
 
-Capture a turn from the chat (the fork action, aimed at `eval_stories/` instead of `stories/`) and it is frozen — the messages up to the player message being answered, plus the story context as of that point. In the studio you pick which instruction file to vary, two of its versions, a model, and how many completions to generate per version. Each completion gets its own column, streaming reasoning, narration, and tool calls live, side by side.
+Capture a turn from the chat (the fork action, aimed at `eval_stories/` instead of `stories/`) and it is frozen — the messages up to the player message being answered, plus the story context as of that point. In the studio you pick two core versions, a model, and how many completions to generate per version. Each completion gets its own column, streaming reasoning, narration, and tool calls live, side by side.
 
 Lanes are fully independent: each builds its own model client over its own copy of the story context, so a run never touches the live game or any story. With caching on, one lane per version goes first and the others wait for it to start producing output, by which point they read the shared prefix from cache instead of each paying to write it.
 
@@ -88,6 +88,7 @@ Captured turns live in `eval_stories/{id}/`, shaped like a story (`info.json`, `
     - lm-arena type loop: generate turns with prompt A and prompt B, pick the preferred one of a pair without knowing which is which, show win% at the end
     - currently the columns are labelled and unscored, so it's just eyeballing
     - maybe also for model benchamrking, but models are way easier to evaluate anyways so less value
+    - now seems like it would just be better to make a rubric for a judge that takes all the responses blind and gives numerical ratings for each in the batch. display them sorted
 
 - extremely extensive story plans just break things. need to limit size or have more complicated scaffolding
     - phandelver story plan (copied verbatim from the book, including lots of 'first time GMing' advice) is ~170k tokens on its own
@@ -154,3 +155,4 @@ Captured turns live in `eval_stories/{id}/`, shaped like a story (`info.json`, `
         - or exchanges, or full on test scenes in made up scenarios?
     - fable just makes every character sound like fable
     - so many kicks. both eye kicks and some other kind. rhetorical kicks?
+

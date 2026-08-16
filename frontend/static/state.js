@@ -47,10 +47,14 @@ export const debugAssistantCount = document.getElementById('debug-assistant-coun
 export const debugToolCount = document.getElementById('debug-tool-count');
 export const debugFileCount = document.getElementById('debug-file-count');
 
-// Settings modal elements
+// Settings popup elements
 export const settingsBtn = document.getElementById('settings-btn');
 export const settingsModal = document.getElementById('settings-modal');
 export const settingsModalClose = document.getElementById('settings-modal-close');
+export const modelEditorBtn = document.getElementById('model-editor-btn');
+export const modelEditorPopup = document.getElementById('model-editor-popup');
+export const modelList = document.getElementById('model-list');
+export const modelAddBtn = document.getElementById('model-add-btn');
 export const cacheModeSelectCustom = document.getElementById('cache-mode-select-custom');
 export const cacheModeSelectDropdown = document.getElementById('cache-mode-select-dropdown');
 export const cacheModeSelect = document.getElementById('cache-mode-select');
@@ -59,6 +63,12 @@ export const cacheModeSelect = document.getElementById('cache-mode-select');
 export const createSystemSelectCustom = document.getElementById('create-system-select-custom');
 export const createSystemSelectDropdown = document.getElementById('create-system-select-dropdown');
 export const createSystemSelect = document.getElementById('create-system-select');
+export const createCoreSelectCustom = document.getElementById('create-core-select-custom');
+export const createCoreSelectDropdown = document.getElementById('create-core-select-dropdown');
+export const createCoreSelect = document.getElementById('create-core-select');
+export const defaultCoreSelectCustom = document.getElementById('default-core-select-custom');
+export const defaultCoreSelectDropdown = document.getElementById('default-core-select-dropdown');
+export const defaultCoreSelect = document.getElementById('default-core-select');
 export const createModelSelectCustom = document.getElementById('create-model-select-custom');
 export const createModelSelectDropdown = document.getElementById('create-model-select-dropdown');
 export const createModelSelect = document.getElementById('create-model-select');

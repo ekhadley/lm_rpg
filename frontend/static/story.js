@@ -10,7 +10,7 @@ const formatStoryDate = (ts) => {
 import {
     socket, storyList, chatHistory, chatHeader, welcomeWrapper, userInput, floatingButtons,
     newStoryBtn, createStoryBtn, createStoryModal, createStoryModalClose, createStoryModalCancel,
-    createModelSelect, createSystemSelect,
+    createModelSelect, createSystemSelect, createCoreSelect,
     selectStoryConfigModal, selectStoryConfigModalClose, selectStoryConfigModalCancel,
     selectStoryConfigBtn, selectStoryModelSelect, selectStorySystemSelect,
     copyStoryModal, copyStoryModalClose, copyStoryModalCancel,
@@ -22,7 +22,7 @@ import {
     fileViewerOverlay, fileViewerTitle, fileViewerBody, fileViewerToc, fileViewerClose,
     fileViewerToggle, fileViewerSave, fileViewerEditor,
 } from './state.js';
-import { showTypingIndicator, showConfirmPopup, positionPopupNear } from './ui.js';
+import { showTypingIndicator, showConfirmPopup, positionPopupNear, getDefaultCore } from './ui.js';
 
 // The two ways to copy a story. Both open the same modal; the mode picks its wording and is the
 // only thing the server needs, so there is nothing to tick.
@@ -251,7 +251,12 @@ export function initStory() {
 
     // New Story button opens create modal
     if (newStoryBtn) {
-        newStoryBtn.addEventListener('click', (e) => { e.stopPropagation(); if (createStoryModal) positionPopupNear(createStoryModal, newStoryBtn); });
+        newStoryBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            createCoreSelect.value = getDefaultCore();  // the settings default, overridable per story
+            createCoreSelect.dispatchEvent(new Event('change'));
+            if (createStoryModal) positionPopupNear(createStoryModal, newStoryBtn);
+        });
     }
 
     // Story list click handler
@@ -405,7 +410,7 @@ export function initStory() {
             }
             const modelName = createModelSelect.value;
             const systemName = createSystemSelect.value;
-            socket.emit('create_story', { story_name: newStoryName, model_name: modelName, system_name: systemName });
+            socket.emit('create_story', { story_name: newStoryName, model_name: modelName, system_name: systemName, core: createCoreSelect.value });
             if (createStoryModal) createStoryModal.classList.remove('show');
             const newStoryInput = document.getElementById('new_story_name');
             if (newStoryInput) newStoryInput.value = '';

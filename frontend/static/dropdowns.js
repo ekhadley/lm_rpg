@@ -1,11 +1,14 @@
 import {
     createSystemSelectCustom, createSystemSelectDropdown, createSystemSelect,
     createModelSelectCustom, createModelSelectDropdown, createModelSelect,
+    createCoreSelectCustom, createCoreSelectDropdown, createCoreSelect,
+    defaultCoreSelectCustom, defaultCoreSelectDropdown, defaultCoreSelect,
     selectStorySystemSelectCustom, selectStorySystemSelectDropdown, selectStorySystemSelect,
     selectStoryModelSelectCustom, selectStoryModelSelectDropdown, selectStoryModelSelect,
     copyStoryModelSelectCustom, copyStoryModelSelectDropdown, copyStoryModelSelect,
     cacheModeSelectCustom, cacheModeSelectDropdown, cacheModeSelect,
 } from './state.js';
+import { brandIcon } from './brands.js';
 
 export function initCustomDropdown(customSelect, dropdown, nativeSelect) {
     if (!customSelect || !dropdown || !nativeSelect) return;
@@ -16,13 +19,13 @@ export function initCustomDropdown(customSelect, dropdown, nativeSelect) {
     // Initialize selected value
     const selectedOption = dropdown.querySelector('.custom-select-option[data-selected="true"]');
     if (selectedOption) {
-        valueSpan.textContent = selectedOption.textContent;
+        valueSpan.innerHTML = selectedOption.innerHTML;
         selectedOption.classList.add('selected');
         nativeSelect.value = selectedOption.dataset.value;
     } else {
         const firstOption = dropdown.querySelector('.custom-select-option');
         if (firstOption) {
-            valueSpan.textContent = firstOption.textContent;
+            valueSpan.innerHTML = firstOption.innerHTML;
             firstOption.classList.add('selected');
             nativeSelect.value = firstOption.dataset.value;
         }
@@ -60,18 +63,19 @@ export function initCustomDropdown(customSelect, dropdown, nativeSelect) {
         }
     });
 
-    dropdown.querySelectorAll('.custom-select-option').forEach(option => {
-        option.addEventListener('click', (e) => {
-            e.stopPropagation();
-            dropdown.querySelectorAll('.custom-select-option').forEach(opt => {
-                opt.classList.remove('selected');
-            });
-            option.classList.add('selected');
-            valueSpan.textContent = option.textContent;
-            nativeSelect.value = option.dataset.value;
-            nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-            closeDropdown();
+    // Delegated so options rebuilt later (e.g. after the model list is edited) still work.
+    dropdown.addEventListener('click', (e) => {
+        const option = e.target.closest('.custom-select-option');
+        if (!option) return;
+        e.stopPropagation();
+        dropdown.querySelectorAll('.custom-select-option').forEach(opt => {
+            opt.classList.remove('selected');
         });
+        option.classList.add('selected');
+        valueSpan.innerHTML = option.innerHTML;
+        nativeSelect.value = option.dataset.value;
+        nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        closeDropdown();
     });
 
     nativeSelect.addEventListener('change', () => {
@@ -82,7 +86,7 @@ export function initCustomDropdown(customSelect, dropdown, nativeSelect) {
                 opt.classList.remove('selected');
             });
             option.classList.add('selected');
-            valueSpan.textContent = option.textContent;
+            valueSpan.innerHTML = option.innerHTML;
         }
     });
 
@@ -105,12 +109,30 @@ export function initCustomDropdown(customSelect, dropdown, nativeSelect) {
     updateDisabledState();
 }
 
+// Refill a dropdown's options (native + custom), keeping the current selection if it survives.
+export function setDropdownOptions(customSelect, dropdown, nativeSelect, values) {
+    if (!customSelect || !dropdown || !nativeSelect) return;
+    const previous = nativeSelect.value;
+    const selected = values.includes(previous) ? previous : values[0];
+    nativeSelect.innerHTML = values.map(v => `<option value="${v}">${v}</option>`).join('');
+    dropdown.innerHTML = values.map(v => `<div class="custom-select-option" data-value="${v}">${brandIcon(v)}${v}</div>`).join('');
+    nativeSelect.value = selected || '';
+    nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    customSelect.querySelector('.custom-select-value').innerHTML = selected ? brandIcon(selected) + selected : '';
+}
+
 export function initAllDropdowns() {
     if (createSystemSelectCustom && createSystemSelectDropdown && createSystemSelect) {
         initCustomDropdown(createSystemSelectCustom, createSystemSelectDropdown, createSystemSelect);
     }
     if (createModelSelectCustom && createModelSelectDropdown && createModelSelect) {
         initCustomDropdown(createModelSelectCustom, createModelSelectDropdown, createModelSelect);
+    }
+    if (createCoreSelectCustom && createCoreSelectDropdown && createCoreSelect) {
+        initCustomDropdown(createCoreSelectCustom, createCoreSelectDropdown, createCoreSelect);
+    }
+    if (defaultCoreSelectCustom && defaultCoreSelectDropdown && defaultCoreSelect) {
+        initCustomDropdown(defaultCoreSelectCustom, defaultCoreSelectDropdown, defaultCoreSelect);
     }
     if (selectStorySystemSelectCustom && selectStorySystemSelectDropdown && selectStorySystemSelect) {
         initCustomDropdown(selectStorySystemSelectCustom, selectStorySystemSelectDropdown, selectStorySystemSelect);

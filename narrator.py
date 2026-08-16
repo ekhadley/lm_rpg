@@ -8,14 +8,15 @@ from history import TurnTree
 from flask_socketio import SocketIO
     
 class Narrator:
-    def __init__(self, model_name: str, story_id: str, system_name: str, socket: SocketIO, cache_mode: str = "1h"):
+    def __init__(self, model_name: str, story_id: str, system_name: str, core_version: str, socket: SocketIO, cache_mode: str = "1h"):
         self.model_name: str = model_name
         self.system_name: str = system_name
+        self.core_version: str = core_version  # which instructions/core/*.md this story runs on, fixed at creation
         self.story_id: str = story_id
         self.files: dict[str, str] = {}  # in-memory story context (the single source of truth, reconstructed from the tree)
         self.tb: Toolbox = SYSTEM_TOOLBOXES[system_name](self.files)
         self.socket: SocketIO = socket
-        self.system_prompt = getFullStoryInstruction(system_name, self.files)
+        self.system_prompt = getFullStoryInstruction(system_name, core_version, self.files)
         self.story_history_path = f"./stories/{story_id}/history.json"
         self.thinking_effort = "max"
         self.tree = TurnTree.empty()
@@ -30,7 +31,7 @@ class Narrator:
 
     def _systemMessage(self) -> dict:
         # Re-read the instruction files live (so edits take effect next turn); story context comes from self.files.
-        self.system_prompt = getFullStoryInstruction(self.system_name, self.files)
+        self.system_prompt = getFullStoryInstruction(self.system_name, self.core_version, self.files)
         block = {"type": "text", "text": self.system_prompt}
         if self.provider.cacheControl():
             block["cache_control"] = self.provider.cacheControl()
@@ -50,7 +51,7 @@ class Narrator:
     # full contents of the files it changed (a delta); a node's full state is reconstructed by
     # replaying deltas root→node (TurnTree.file_state_at). self.files is the single source of truth:
     # tools mutate it in place during a turn, and it is reset from the tree on every navigation.
-    # Shared instruction files (core.md, {system}.md) stay real files, live-read in _systemMessage.
+    # Shared instruction files (core/{version}.md, systems/{system}.md) stay real files, live-read in _systemMessage.
 
     def _setFiles(self, state: dict) -> None:
         """Reset the in-memory story context in place (the toolbox holds the same dict reference)."""
@@ -99,11 +100,14 @@ class Narrator:
 
     def clearMessages(self):
         """Reset to a fresh tree after summarization. Carry the current story context forward as a
-        hidden synthetic root (empty messages + files delta) so it survives into the new conversation."""
+        hidden synthetic root (empty messages + files delta) so it survives into the new conversation.
+        Written to disk immediately: until the next turn ends, that root is the only copy of the
+        story context, and a reload/restart would otherwise reinitialize the narrator without it."""
         self.tree = TurnTree.empty()
         if self.files:
             self.tree.add_node(None, "user", [], files=dict(self.files))
         self._rebuildContext()
+        self.saveMessages()
 
     def _commitFiles(self) -> None:
         """Persist a manual story-context change by folding the whole context into the current leaf's
@@ -333,7 +337,7 @@ class Narrator:
         node = self.tree.nodes.get(node_id)
         if not node or node["role"] != "assistant" or not new_name:
             return None
-        new_id = makeNewStoryDir(new_name, self.system_name, self.model_name, root=root)
+        new_id = makeNewStoryDir(new_name, self.system_name, self.core_version, self.model_name, root=root)
         path = self.tree.path_to(node_id)
         nodes = []  # copy each node on the path, trimming children to just the next path node
         for i, nid in enumerate(path):

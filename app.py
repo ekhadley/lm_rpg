@@ -1,5 +1,6 @@
 #!./.venv/bin/python
 import os
+import glob
 import json
 import shutil
 from flask_socketio import SocketIO, emit
@@ -10,8 +11,9 @@ from utils import (
     logger, listStoryIds, loadStoryInfo, makeNewStoryDir,
     historyExists, isValidGameSystem, listGameSystemNames,
     archiveHistory, copyStory, archiveStoryDir, renameStory,
-    loadAllPreviousHistory, resolveInstructionFile,
-    listInstructionVersions, EVAL_STORIES_DIR, PROMPT_CONTEXT_FILES,
+    loadAllPreviousHistory, systemInstructionFile, readMarkdown,
+    listCoreVersions, EVAL_STORIES_DIR, PROMPT_CONTEXT_FILES,
+    loadModels, saveModels,
 )
 from studio import listEvalTurns, runStudio, listRuns, loadRun
 
@@ -21,24 +23,17 @@ socket = SocketIO(app, cors_allowed_origins="*")
 
 global narrator
 narrator = None
-settings = {"cache_mode": "1h"}  # "none" | "5m" | "1h"
-models = [
-    "anthropic/claude-fable-5",
-    "anthropic/claude-opus-5",
-    "anthropic/claude-haiku-4.5",
-    "openai/gpt-5.5",
-    "openai/gpt-5.5-pro",
-    "openai/gpt-4o-mini",
-    "google/gemini-3.1-pro-preview",
-    "google/gemini-3.5-flash",
-    "moonshotai/kimi-k2.5",
-]
+# cache_mode: "none" | "5m" | "1h". core: the core-instruction version new stories default to,
+# and the one used for stories written before core became a per-story choice.
+settings = {"cache_mode": "1h", "core": listCoreVersions()[0]}
+models = loadModels()
 
 def init_narrator(story_id: str, story_info: dict, model_name: str) -> Narrator:
     logger.debug(f"{'loading existing' if historyExists(story_id) else 'creating new'} history for story: '{story_id}'")
     return Narrator(
         model_name = model_name,
         system_name = story_info["system"],
+        core_version = story_info.get("core") or settings["core"],
         story_id = story_id,
         socket = socket,
         cache_mode = settings["cache_mode"],
@@ -53,7 +48,20 @@ def set_settings(data: dict[str, str]):
     settings["cache_mode"] = cache_mode
     if narrator is not None:
         narrator.setCacheMode(cache_mode)
-    logger.debug(f"cache mode set to '{cache_mode}'")
+    core = data.get('core')
+    if core in listCoreVersions():
+        settings["core"] = core
+    logger.debug(f"settings: cache mode '{cache_mode}', default core '{settings['core']}'")
+
+@socket.on('set_models')
+def set_models(data: dict):
+    """Replace the model list with the one the settings popup sent, then broadcast it so every
+    client's model pickers rebuild."""
+    global models
+    models = [m.strip() for m in data['models'] if m.strip()]
+    saveModels(models)
+    socket.emit('models_updated', {"models": models})
+    logger.debug(f"model list updated ({len(models)} models)")
 
 @socket.on('select_story')
 def select_story(data: dict[str, str]):
@@ -101,11 +109,15 @@ def create_story(data: dict[str, str]):
     display_name = data['story_name'].strip()
     system = data['system_name']
     model_name = data['model_name']
+    core = data.get('core', settings["core"])
     if display_name:
         if not isValidGameSystem(system):
             emit('error', {"message": f"Invalid or unavailable system '{system}'"})
             return
-        story_id = makeNewStoryDir(display_name, system, model_name)
+        if core not in listCoreVersions():
+            emit('error', {"message": f"Invalid core version '{core}'"})
+            return
+        story_id = makeNewStoryDir(display_name, system, core, model_name)
         emit('story_created', {
             "id": story_id,
             "name": display_name,
@@ -196,12 +208,7 @@ def get_system_instructions():
     if narrator is None:
         emit('error', {"message": "No story selected"})
         return
-    filepath = resolveInstructionFile(narrator.system_name)
-    if filepath is None:
-        emit('error', {"message": "System instructions not found"})
-        return
-    with open(filepath, 'r') as f:
-        content = f.read()
+    content = readMarkdown(systemInstructionFile(narrator.system_name))
     emit('story_file_content', {"filename": f"{narrator.system_name}.md", "content": content})
 
 @socket.on('get_story_file')
@@ -352,13 +359,15 @@ def delete_eval_turn(data: dict[str, str]):
 
 @socket.on('studio_run')
 def studio_run(data: dict):
-    """Generate n completions per instruction version for a captured turn, streamed lane by lane."""
+    """Generate n completions per core version for a captured turn, streamed lane by lane."""
+    if data['ver_a'] == data['ver_b']:  # lanes are keyed by version, so the two columns must differ
+        emit('error', {"message": "Pick two different core versions"})
+        return
     runStudio(
         socket,
         eval_id=data['eval_id'],
-        base=data.get('base', 'core'),
-        ver_a=int(data['ver_a']),
-        ver_b=int(data['ver_b']),
+        ver_a=data['ver_a'],
+        ver_b=data['ver_b'],
         n=int(data.get('n', 1)),
         model=data['model'],
         cache=bool(data.get('cache', True)),
@@ -373,10 +382,8 @@ def load_studio_run(data: dict):
     emit('studio_run_loaded', loadRun(data['eval_id'], data['file']))
 
 @socket.on('get_studio_options')
-def get_studio_options(data: dict = None):
-    base = (data or {}).get('base', 'core')
-    emit('studio_options', {"base": base, "versions": listInstructionVersions(base),
-                            "bases": listGameSystemNames(), "models": models})
+def get_studio_options():
+    emit('studio_options', {"versions": listCoreVersions(), "models": models})
 
 @socket.on('edit_message')
 def edit_message(data):
@@ -403,16 +410,18 @@ def switch_branch(data):
         narrator.switch_branch(turn_id, direction)
 
 def story_last_activity(story_id):
-    """Timestamp of the most recent message in the story, falling back to the story's creation time.
+    """Timestamp of the most recent message in the story — current history plus any archived
+    ones, so archiving doesn't reset a story's date — falling back to the story's creation time.
     ISO-8601 strings sort chronologically as plain text, so we can compare them directly."""
-    history_path = f"./stories/{story_id}/history.json"
-    if os.path.exists(history_path):
-        with open(history_path) as f:
-            history = json.load(f)
-        timestamps = [m.get("timestamp", "") for n in history.get("nodes", []) for m in n["messages"]]
-        if any(timestamps):
-            return max(timestamps)
-    return loadStoryInfo(story_id).get("created", "")
+    story_dir = f"./stories/{story_id}"
+    paths = [f"{story_dir}/history.json"] + glob.glob(f"{story_dir}/previous/*.json")
+    timestamps = []
+    for path in paths:
+        if os.path.exists(path):
+            with open(path) as f:
+                history = json.load(f)
+            timestamps += [m.get("timestamp", "") for n in history.get("nodes", []) for m in n["messages"]]
+    return max(timestamps) if any(timestamps) else loadStoryInfo(story_id).get("created", "")
 
 def get_stories_with_info():
     """Helper to load all stories with their info. 'id' is the uuid directory, 'name' is the display name."""
@@ -444,6 +453,7 @@ def index():
                            stories=get_stories_with_info(), 
                            models=models, 
                            systems=listGameSystemNames(),
+                           cores=listCoreVersions(),
                            selected_story=None)
 
 @app.route('/stories/<story_id>')
@@ -456,6 +466,7 @@ def story_page(story_id):
                            stories=get_stories_with_info(),
                            models=models,
                            systems=listGameSystemNames(),
+                           cores=listCoreVersions(),
                            selected_story=story_id)
 
 if __name__ == "__main__":

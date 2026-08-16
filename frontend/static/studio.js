@@ -2,7 +2,7 @@ import { socket } from './state.js';
 import { ensureLiveWrapper, appendReasoning, appendTool, appendDice, closeRows } from './reasoningRow.js';
 import { appendNarration, renderStreamedNarration } from './chat.js';
 
-// The prompt studio: pick a captured turn, regenerate it under two instruction versions at once,
+// The prompt studio: pick a captured turn, regenerate it under two core-instruction versions at once,
 // and read the results side by side. Lanes stream through the same renderers the chat uses — a lane
 // is just a wrapper element in a column.
 
@@ -16,7 +16,6 @@ const studioColumns = document.getElementById('studio-columns');
 const studioTurnName = document.getElementById('studio-turn-name');
 const studioCost = document.getElementById('studio-cost');
 const studioRunBtn = document.getElementById('studio-run-btn');
-const baseSel = document.getElementById('studio-base');
 const verASel = document.getElementById('studio-ver-a');
 const verBSel = document.getElementById('studio-ver-b');
 const modelSel = document.getElementById('studio-model');
@@ -50,7 +49,7 @@ function setMode(mode) {
     modeToggle.querySelectorAll('.mode-option').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
     if (studio) {
         socket.emit('list_eval_turns');
-        socket.emit('get_studio_options', { base: baseSel.value || 'core' });
+        socket.emit('get_studio_options');
     }
 }
 
@@ -98,7 +97,7 @@ function renderRunHistory(runs) {
     for (const r of runs) {
         const o = document.createElement('option');
         o.value = r.file;
-        o.textContent = r.versions.map(v => r.base + v).join(' vs ')
+        o.textContent = r.versions.join(' vs ')
             + ' · n=' + r.n
             + ' · ' + r.model.split('/').pop()
             + ' · ' + new Date(r.started).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -118,6 +117,10 @@ function selectTurn(turn) {
         modelSel.appendChild(o);
     }
     modelSel.value = turn.model;  // default to the model the turn was captured from
+    if (turn.core && [...verASel.options].some(o => o.value === turn.core)) {
+        verASel.value = turn.core;  // default lane A to the core version the turn was played under
+        if (verBSel.value === turn.core) verBSel.value = [...verBSel.options].map(o => o.value).find(v => v !== turn.core) || turn.core;
+    }
     evalTurnList.querySelectorAll('.eval-turn-item').forEach(li => li.classList.toggle('active', li.dataset.id === turn.id));
     studioColumns.innerHTML = '';
     studioCost.textContent = '';
@@ -132,7 +135,7 @@ function buildColumns(cfg) {
         col.className = 'studio-column';
         const head = document.createElement('div');
         head.className = 'studio-column-header';
-        head.textContent = cfg.base + ver + '.md';
+        head.textContent = ver;
         col.appendChild(head);
         for (let i = 0; i < cfg.n; i++) {
             const lane = 'v' + ver + '-' + i;
@@ -191,7 +194,6 @@ export function initStudio() {
         btn.addEventListener('click', () => setMode(btn.dataset.mode));
     });
 
-    baseSel.addEventListener('change', () => socket.emit('get_studio_options', { base: baseSel.value }));
     cacheCheck.addEventListener('change', updateWarning);
     nInput.addEventListener('input', updateWarning);
     updateWarning();
@@ -205,7 +207,6 @@ export function initStudio() {
         if (!selectedTurn) return;
         socket.emit('studio_run', {
             eval_id: selectedTurn,
-            base: baseSel.value,
             ver_a: verASel.value,
             ver_b: verBSel.value,
             n: parseInt(nInput.value, 10),
@@ -220,12 +221,13 @@ export function initStudio() {
     socket.on('eval_turn_captured', () => socket.emit('list_eval_turns'));
 
     socket.on('studio_options', function(data) {
-        if (!baseSel.options.length) options(baseSel, data.bases, data.base);
         if (!modelSel.options.length) options(modelSel, data.models, data.models[1]);
         const vers = data.versions;
         options(verASel, vers, vers[0]);
         options(verBSel, vers, vers[vers.length - 1]);
     });
+
+    socket.on('models_updated', (data) => options(modelSel, data.models, modelSel.value));
 
     socket.on('studio_runs', function(d) {
         if (d.eval_id === selectedTurn) renderRunHistory(d.runs);

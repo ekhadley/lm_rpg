@@ -1,4 +1,4 @@
-import { userInput, summarizePopup, summarizeButton, selectStoryConfigModal, copyStoryModal, exportButton, socket, fileViewerOverlay, debugModal, debugModalClose, settingsModal } from './state.js';
+import { userInput, summarizePopup, summarizeButton, selectStoryConfigModal, copyStoryModal, exportButton, socket, fileViewerOverlay, debugModal, debugModalClose, settingsModal, modelEditorPopup } from './state.js';
 import { setPendingStoryName } from './state.js';
 import { initAllDropdowns } from './dropdowns.js';
 import { initStory, selectStoryDirectly, closeCopyStoryModal } from './story.js';
@@ -88,7 +88,8 @@ window.onload = function() {
             if (copyStoryModal && copyStoryModal.classList.contains('show')) closeCopyStoryModal();
             if (fileViewerOverlay && fileViewerOverlay.classList.contains('show')) fileViewerOverlay.classList.remove('show');
             if (debugModal && debugModal.classList.contains('show')) debugModal.classList.remove('show');
-            if (settingsModal && settingsModal.classList.contains('show')) settingsModal.classList.remove('show');
+            if (modelEditorPopup && modelEditorPopup.classList.contains('show')) modelEditorPopup.classList.remove('show');
+            else if (settingsModal && settingsModal.classList.contains('show')) settingsModal.classList.remove('show');
             hideConfirmPopup();
         }
     });

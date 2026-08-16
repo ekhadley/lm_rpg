@@ -2149,6 +2149,21 @@ html, body {
     color: var(--text-bright);
 }
 
+/* Provider brand mark sitting left of a model name (pickers + the settings model editor). */
+.brand-icon {
+    display: inline-block;
+    width: 0.95em;
+    height: 0.95em;
+    flex: none;
+    vertical-align: -0.14em;
+    opacity: 0.8;
+}
+
+.custom-select-option .brand-icon,
+.custom-select-value .brand-icon {
+    margin-right: 6px;
+}
+
 /* Hidden native selects */
 .model-select, .system-select {
     display: none;
@@ -2374,20 +2389,33 @@ html, body {
 .side-popup .modal-header h5 { font-size: 1rem; }
 .side-popup .modal-header h5 i { color: var(--accent); font-size: 0.8em; margin-right: 8px; }
 .side-popup .modal-body { padding: 10px; }
-.side-popup .form-group { margin-bottom: 12px; }
-.side-popup .form-group label { margin-bottom: 4px; }
-
-/* label sits on the same row as its control instead of stacked above it */
-.form-group.inline-field {
+/* Default field layout in popup/modal chrome: the setting's name on the left, the control that
+   fans out (dropdown, sub-popup) or takes input on the right, on one row. */
+.side-popup .form-group,
+.modal-overlay .form-group {
     display: flex;
     flex-direction: row;
     align-items: center;
     gap: 10px;
+    margin-bottom: 10px;
 }
-.form-group.inline-field > label {
+
+/* Rows are separated by a hairline rather than a gap. */
+.side-popup .form-group + .form-group,
+.modal-overlay .form-group + .form-group {
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+.side-popup .form-group > label,
+.modal-overlay .form-group > label {
     margin-bottom: 0;
     white-space: nowrap;
     flex-shrink: 0;
+}
+.side-popup .form-group > .form-control,
+.modal-overlay .form-group > .form-control {
+    flex: 1;
+    min-width: 0;
 }
 .side-popup .modal-footer {
     padding: 8px 10px;
@@ -2409,7 +2437,7 @@ html, body {
     color: var(--text-normal);
 }
 
-/* Section captions: small, muted, letterspaced. Inline fields keep the caption beside its control. */
+/* Section captions: small, muted, letterspaced. */
 .side-popup .form-group > label:first-child,
 .modal-overlay .form-group > label:first-child {
     font-size: 0.68rem;
@@ -2418,8 +2446,6 @@ html, body {
     letter-spacing: 0.07em;
     color: var(--text-muted);
 }
-
-.form-group.inline-field > label:first-child { margin-bottom: 0; }
 
 .side-popup .form-control:hover:not(:focus),
 .modal-overlay .form-control:hover:not(:focus) { border-color: var(--text-muted); }
@@ -2655,6 +2681,129 @@ html, body {
 .modal-body .custom-select-dropdown.show {
     transform: translateX(0);
 }
+
+/* Settings popup: narrator model list — hairline-separated rows with a hover trash, plus an add row */
+/* A settings row that fans out its own popup — styled like the dropdown controls beside it */
+.settings-row-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: var(--msg-user);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    color: var(--text-normal);
+    padding: 5px 8px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.settings-row-btn:hover {
+    border-color: var(--accent);
+    background: var(--bg-alt);
+}
+
+.settings-row-btn i {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-left: 6px;
+}
+
+/* Headerless: the rows are the whole popup, so their hairlines run edge to edge. */
+#model-editor-popup { width: 360px; }
+#model-editor-popup .modal-body { padding: 0; }
+
+.model-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.model-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.model-item:hover {
+    background-color: var(--bg-alt);
+    color: var(--text-bright);
+}
+
+.model-item-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.model-item-move,
+.model-item-delete {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    padding: 2px 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.model-item-move { font-size: 0.7rem; }
+
+.model-item:hover .model-item-move,
+.model-item:hover .model-item-delete { opacity: 1; }
+.model-item-move:hover { color: var(--text-bright); }
+.model-item-delete:hover { color: var(--danger); }
+.model-item-move:active,
+.model-item-delete:active { transform: scale(0.96); }
+
+.model-item:hover .model-item-move:disabled { opacity: 0.25; cursor: default; }
+.model-item-move:disabled:hover { color: var(--text-muted); }
+.model-item-move:disabled:active { transform: none; }
+
+.model-item-input {
+    flex: 1;
+    min-width: 0;
+    background-color: var(--bg-alt);
+    color: var(--text-normal);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    padding: 3px 6px;
+    font-size: 0.82rem;
+    font-family: inherit;
+    outline: none;
+}
+
+.model-add-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.model-add-btn:hover {
+    background-color: var(--bg-alt);
+    color: var(--text-bright);
+}
+
+.model-add-btn:active { transform: scale(0.96); }
 
 /* Confirm Popup */
 .side-popup.confirm-popup { width: 300px; }

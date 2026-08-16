@@ -123,13 +123,10 @@
                     <span class="studio-cost" id="studio-cost"></span>
                 </div>
                 <div class="studio-controls" id="studio-controls">
-                    <label>Base
-                        <select id="studio-base"></select>
-                    </label>
-                    <label>Version A
+                    <label>Core A
                         <select id="studio-ver-a"></select>
                     </label>
-                    <label>Version B
+                    <label>Core B
                         <select id="studio-ver-b"></select>
                     </label>
                     <label>Model
@@ -288,7 +285,7 @@
                         required
                     >
                 </div>
-                <div class="form-group inline-field">
+                <div class="form-group">
                     <label class="select-label">System:</label>
                     <div class="custom-select-wrapper">
                         <div class="custom-select" id="create-system-select-custom" tabindex="0">
@@ -307,7 +304,26 @@
                         </div>
                     </div>
                 </div>
-                <div class="form-group inline-field">
+                <div class="form-group">
+                    <label class="select-label">Core:</label>
+                    <div class="custom-select-wrapper">
+                        <div class="custom-select" id="create-core-select-custom" tabindex="0">
+                            <span class="custom-select-value">{{ cores[0] }}</span>
+                            <i class="fas fa-chevron-right custom-select-arrow"></i>
+                        </div>
+                        <select id="create-core-select" style="display: none;">
+                            {% for core in cores %}
+                            <option value="{{ core }}" {% if loop.first %}selected{% endif %}>{{ core }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="custom-select-dropdown" id="create-core-select-dropdown">
+                            {% for core in cores %}
+                            <div class="custom-select-option" data-value="{{ core }}" {% if loop.first %}data-selected="true"{% endif %}>{{ core }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
                     <label class="select-label">Model:</label>
                     <div class="custom-select-wrapper">
                         <div class="custom-select" id="create-model-select-custom" tabindex="0">
@@ -333,36 +349,67 @@
         </div>
     </div>
 
-    <!-- Settings Modal -->
-    <div id="settings-modal" class="modal-overlay">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5>Settings</h5>
-                <button class="modal-close" id="settings-modal-close">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label class="select-label">Prompt Caching</label>
-                    <div class="custom-select-wrapper">
-                        <div class="custom-select" id="cache-mode-select-custom" tabindex="0">
-                            <span class="custom-select-value">1 hour cache</span>
-                            <i class="fas fa-chevron-right custom-select-arrow"></i>
-                        </div>
-                        <select id="cache-mode-select" style="display: none;">
-                            <option value="none">No caching</option>
-                            <option value="5m">5 minute cache</option>
-                            <option value="1h" selected>1 hour cache</option>
-                        </select>
-                        <div class="custom-select-dropdown" id="cache-mode-select-dropdown">
-                            <div class="custom-select-option" data-value="none">No caching</div>
-                            <div class="custom-select-option" data-value="5m">5 minute cache</div>
-                            <div class="custom-select-option" data-value="1h" data-selected="true">1 hour cache</div>
-                        </div>
+    <!-- Settings popup (anchored to the sidebar gear) -->
+    <div id="settings-modal" class="side-popup">
+        <div class="modal-header">
+            <h5><i class="fas fa-gear"></i>Settings</h5>
+            <button class="modal-close" id="settings-modal-close">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="select-label">Prompt Caching</label>
+                <div class="custom-select-wrapper">
+                    <div class="custom-select" id="cache-mode-select-custom" tabindex="0">
+                        <span class="custom-select-value">1 hour cache</span>
+                        <i class="fas fa-chevron-right custom-select-arrow"></i>
+                    </div>
+                    <select id="cache-mode-select" style="display: none;">
+                        <option value="none">No caching</option>
+                        <option value="5m">5 minute cache</option>
+                        <option value="1h" selected>1 hour cache</option>
+                    </select>
+                    <div class="custom-select-dropdown" id="cache-mode-select-dropdown">
+                        <div class="custom-select-option" data-value="none">No caching</div>
+                        <div class="custom-select-option" data-value="5m">5 minute cache</div>
+                        <div class="custom-select-option" data-value="1h" data-selected="true">1 hour cache</div>
                     </div>
                 </div>
             </div>
+            <div class="form-group">
+                <label class="select-label">Default Core</label>
+                <div class="custom-select-wrapper">
+                    <div class="custom-select" id="default-core-select-custom" tabindex="0">
+                        <span class="custom-select-value">{{ cores[0] }}</span>
+                        <i class="fas fa-chevron-right custom-select-arrow"></i>
+                    </div>
+                    <select id="default-core-select" style="display: none;">
+                        {% for core in cores %}
+                        <option value="{{ core }}" {% if loop.first %}selected{% endif %}>{{ core }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="custom-select-dropdown" id="default-core-select-dropdown">
+                        {% for core in cores %}
+                        <div class="custom-select-option" data-value="{{ core }}" {% if loop.first %}data-selected="true"{% endif %}>{{ core }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <div class="form-group">
+                <button class="settings-row-btn" id="model-editor-btn">
+                    <span>Narrator Models</span>
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Narrator model editor (opens beside the settings popup) -->
+    <div id="model-editor-popup" class="side-popup">
+        <div class="modal-body">
+            <ul class="model-list" id="model-list"></ul>
+            <button class="model-add-btn" id="model-add-btn"><i class="fas fa-plus"></i>Add model</button>
         </div>
     </div>
 
@@ -483,7 +530,7 @@
                 <label for="copy_story_name">New Story Name</label>
                 <input type="text" id="copy_story_name" class="form-control" placeholder="Enter new story name" required>
             </div>
-            <div class="form-group inline-field">
+            <div class="form-group">
                 <label class="select-label">Model</label>
                 <div class="custom-select-wrapper">
                     <div class="custom-select" id="copy-story-model-select-custom" tabindex="0">
@@ -544,6 +591,7 @@
         </div>
     </div>
 
+    <script>window.MODELS = {{ models|tojson }}; window.CORES = {{ cores|tojson }};</script>
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>

@@ -3,9 +3,15 @@ import {
     summarizeButton, summarizePopup, summarizePopupCancel, summarizePopupConfirm,
     costButton, costPopup, costTotalTokens, costAvgTokens, costTotalCost, costAvgCost, costLastTurn,
     themeToggleBtn,
-    settingsBtn, settingsModal, settingsModalClose, cacheModeSelect,
+    settingsBtn, settingsModal, settingsModalClose, cacheModeSelect, defaultCoreSelect,
+    modelList, modelAddBtn, modelEditorBtn, modelEditorPopup,
+    createModelSelectCustom, createModelSelectDropdown, createModelSelect,
+    selectStoryModelSelectCustom, selectStoryModelSelectDropdown, selectStoryModelSelect,
+    copyStoryModelSelectCustom, copyStoryModelSelectDropdown, copyStoryModelSelect,
     socket,
 } from './state.js';
+import { setDropdownOptions } from './dropdowns.js';
+import { brandIcon } from './brands.js';
 
 // Layout constants for popup positioning
 const EDGE_MARGIN = 8;
@@ -285,27 +291,161 @@ export function getCacheMode() {
     return localStorage.getItem('cacheMode') || '1h';
 }
 
+// The core version new stories are created with, and the one stories predating the per-story
+// setting fall back to. Stored per browser, pushed to the server on connect like the cache mode.
+export function getDefaultCore() {
+    const saved = localStorage.getItem('defaultCore');
+    return window.CORES.includes(saved) ? saved : window.CORES[0];
+}
+
+// Narrator model list: one row per model with hover reorder arrows and a trash, plus an inline row
+// for adding one. The server owns the list; every edit sends the whole list back and the reply
+// re-renders. List order is the order every model picker shows.
+function renderModelList() {
+    if (!modelList) return;
+    modelList.innerHTML = '';
+    window.MODELS.forEach((model, i) => {
+        const li = document.createElement('li');
+        li.className = 'model-item';
+        li.dataset.model = model;
+        li.dataset.index = i;
+        li.innerHTML = `${brandIcon(model)}<span class="model-item-name"></span>
+            <button class="model-item-move" data-dir="-1" title="Move up"${i === 0 ? ' disabled' : ''}><i class="fas fa-chevron-up"></i></button>
+            <button class="model-item-move" data-dir="1" title="Move down"${i === window.MODELS.length - 1 ? ' disabled' : ''}><i class="fas fa-chevron-down"></i></button>
+            <button class="model-item-delete" title="Remove model"><i class="fas fa-trash"></i></button>`;
+        li.querySelector('.model-item-name').textContent = model;
+        modelList.appendChild(li);
+    });
+}
+
+// Swap a model with its neighbour in the given direction.
+function moveModel(index, dir) {
+    const models = [...window.MODELS];
+    const target = index + dir;
+    if (target < 0 || target >= models.length) return;
+    [models[index], models[target]] = [models[target], models[index]];
+    sendModels(models);
+}
+
+function sendModels(models) {
+    socket.emit('set_models', { models });
+}
+
+function startNewModel() {
+    if (!modelList || modelList.querySelector('.model-item-new')) return;
+    const li = document.createElement('li');
+    li.className = 'model-item model-item-new';
+    const input = document.createElement('input');
+    input.className = 'model-item-input';
+    input.placeholder = 'provider/model-id';
+    li.appendChild(input);
+    modelList.appendChild(li);
+    input.focus();
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') input.blur();
+        if (e.key !== 'Enter') return;
+        const name = input.value.trim();
+        if (!name || window.MODELS.includes(name)) return;
+        sendModels([...window.MODELS, name]);
+        input.blur();
+    });
+    input.addEventListener('blur', () => li.remove());
+}
+
+// Every model picker, refilled from the current list. Also runs once at startup so the
+// server-rendered options pick up their brand icons.
+function refillModelDropdowns() {
+    setDropdownOptions(createModelSelectCustom, createModelSelectDropdown, createModelSelect, window.MODELS);
+    setDropdownOptions(selectStoryModelSelectCustom, selectStoryModelSelectDropdown, selectStoryModelSelect, window.MODELS);
+    setDropdownOptions(copyStoryModelSelectCustom, copyStoryModelSelectDropdown, copyStoryModelSelect, window.MODELS);
+}
+
+function initModelSettings() {
+    if (!modelList) return;
+    renderModelList();
+    refillModelDropdowns();
+
+    // The editor is its own popup, fanning out beside the settings row on hover like the dropdowns
+    // do. The close delay lets the cursor cross the gap, and typing in the add row holds it open.
+    let closeTimer = null;
+    const openEditor = () => {
+        clearTimeout(closeTimer);
+        positionPopupNear(modelEditorPopup, settingsModal);
+    };
+    const scheduleClose = () => {
+        closeTimer = setTimeout(() => {
+            if (!modelEditorPopup.contains(document.activeElement)) modelEditorPopup.classList.remove('show');
+        }, 150);
+    };
+    modelEditorBtn.addEventListener('mouseenter', openEditor);
+    modelEditorBtn.addEventListener('mouseleave', scheduleClose);
+    modelEditorPopup.addEventListener('mouseenter', () => clearTimeout(closeTimer));
+    modelEditorPopup.addEventListener('mouseleave', scheduleClose);
+
+    modelList.addEventListener('click', (e) => {
+        const move = e.target.closest('.model-item-move');
+        if (move) {
+            moveModel(parseInt(move.closest('.model-item').dataset.index, 10), parseInt(move.dataset.dir, 10));
+            return;
+        }
+        const del = e.target.closest('.model-item-delete');
+        if (!del) return;
+        const model = del.closest('.model-item').dataset.model;
+        sendModels(window.MODELS.filter(m => m !== model));
+    });
+    if (modelAddBtn) modelAddBtn.addEventListener('click', startNewModel);
+
+    socket.on('models_updated', (data) => {
+        window.MODELS = data.models;
+        renderModelList();
+        refillModelDropdowns();
+    });
+}
+
+function pushSettings() {
+    socket.emit('set_settings', { cache_mode: getCacheMode(), core: getDefaultCore() });
+}
+
 export function initSettings() {
     if (!settingsBtn || !settingsModal) return;
+    initModelSettings();
 
-    // Sync the dropdown to the saved value, then start listening for changes
+    // Sync the dropdowns to the saved values, then start listening for changes
     if (cacheModeSelect) {
         cacheModeSelect.value = getCacheMode();
         cacheModeSelect.dispatchEvent(new Event('change'));  // update custom dropdown display
         cacheModeSelect.addEventListener('change', () => {
             localStorage.setItem('cacheMode', cacheModeSelect.value);
-            socket.emit('set_settings', { cache_mode: cacheModeSelect.value });
+            pushSettings();
+        });
+    }
+    if (defaultCoreSelect) {
+        defaultCoreSelect.value = getDefaultCore();
+        defaultCoreSelect.dispatchEvent(new Event('change'));
+        defaultCoreSelect.addEventListener('change', () => {
+            localStorage.setItem('defaultCore', defaultCoreSelect.value);
+            pushSettings();
         });
     }
 
-    // Push the saved setting to the server now and on every (re)connect
-    socket.emit('set_settings', { cache_mode: getCacheMode() });
-    socket.on('connect', () => socket.emit('set_settings', { cache_mode: getCacheMode() }));
+    // Push the saved settings to the server now and on every (re)connect
+    pushSettings();
+    socket.on('connect', pushSettings);
 
-    settingsBtn.addEventListener('click', () => settingsModal.classList.add('show'));
-    if (settingsModalClose) settingsModalClose.addEventListener('click', () => settingsModal.classList.remove('show'));
-    settingsModal.addEventListener('click', (e) => {
-        if (e.target === settingsModal) settingsModal.classList.remove('show');
+    // Closing settings takes the model editor with it; clicks inside the editor leave both open.
+    const closeSettings = () => {
+        settingsModal.classList.remove('show');
+        modelEditorPopup.classList.remove('show');
+    };
+    settingsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (settingsModal.classList.contains('show')) closeSettings();
+        else positionPopupNear(settingsModal, settingsBtn);
+    });
+    if (settingsModalClose) settingsModalClose.addEventListener('click', closeSettings);
+    document.addEventListener('click', (e) => {
+        if (settingsModal.classList.contains('show') && !settingsModal.contains(e.target) && !modelEditorPopup.contains(e.target)) closeSettings();
     });
 }
 

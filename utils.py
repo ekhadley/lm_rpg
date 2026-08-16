@@ -66,50 +66,67 @@ STORIES_ROOT_DIR = "stories"
 STORIES_ARCHIVE_DIR = "stories/.archived"
 EVAL_STORIES_DIR = "eval_stories"
 INSTRUCTIONS_DIR = "instructions"
+CORE_DIR = f"{INSTRUCTIONS_DIR}/core"        # one file per core version, freely named
+SYSTEMS_DIR = f"{INSTRUCTIONS_DIR}/systems"  # one file per game system
+
+# The narrator models offered in every model picker. Editable from the settings popup;
+# the file is written on every edit and seeded from DEFAULT_MODELS when missing.
+MODELS_FILE = "models.json"
+DEFAULT_MODELS = [
+    "anthropic/claude-fable-5",
+    "anthropic/claude-opus-5",
+    "anthropic/claude-haiku-4.5",
+    "openai/gpt-5.5",
+    "openai/gpt-5.5-pro",
+    "openai/gpt-4o-mini",
+    "google/gemini-3.1-pro-preview",
+    "google/gemini-3.5-flash",
+    "moonshotai/kimi-k2.5",
+]
+
+def loadModels() -> list[str]:
+    if not os.path.exists(MODELS_FILE):
+        saveModels(DEFAULT_MODELS)
+    with open(MODELS_FILE) as f:
+        return json.load(f)
+
+def saveModels(models: list[str]) -> None:
+    with open(MODELS_FILE, 'w') as f:
+        json.dump(models, f, indent=4)
 
 def listStoryIds() -> list[str]:
     return sorted(f for f in os.listdir("./stories") if not f.startswith('.'))
 
-def resolveInstructionFile(base: str, version: int | None = None) -> str | None:
-    """Path of the instruction file to load for a base name (e.g. 'core', 'hp').
+def readMarkdown(path: str) -> str:
+    """Read a markdown file off disk with `<!-- comments -->` stripped out. A comment takes any
+    newline directly after it with it, so whole-line comments don't leave a blank line behind."""
+    with open(path) as f:
+        return re.sub(r"^[ \t]*<!--.*?-->[ \t]*\n|<!--.*?-->\n?", "", f.read(), flags=re.DOTALL | re.MULTILINE)
 
-    With `version`, the exact `{base}{version}.md` is required. Otherwise a numberless file
-    (`core.md`) wins if present, else the highest-numbered versioned file (`core0.md`,
-    `core1.md`, ...). Returns None if neither exists.
-    """
-    if version is not None:
-        pinned = f"{INSTRUCTIONS_DIR}/{base}{version}.md"
-        assert os.path.exists(pinned), f"no instruction file {pinned}"
-        return pinned
-    plain = f"{INSTRUCTIONS_DIR}/{base}.md"
-    if os.path.exists(plain):
-        return plain
-    pattern = re.compile(rf"^{re.escape(base)}(\d+)\.md$")
-    best = None
-    for name in os.listdir(INSTRUCTIONS_DIR):
-        m = pattern.match(name)
-        if m and (best is None or int(m.group(1)) > best[0]):
-            best = (int(m.group(1)), name)
-    return f"{INSTRUCTIONS_DIR}/{best[1]}" if best else None
+def coreInstructionFile(version: str) -> str:
+    """Path of a core-instruction version. The version is the bare filename stem, so versions are
+    named freely (`self_review`, `no_style_guide`); the name never reaches the prompt."""
+    path = f"{CORE_DIR}/{version}.md"
+    assert os.path.exists(path), f"no core instruction file {path}"
+    return path
 
-def listInstructionVersions(base: str) -> list[int]:
-    """Versions available for an instruction base, ascending (empty for a numberless-only file)."""
-    pattern = re.compile(rf"^{re.escape(base)}(\d+)\.md$")
-    return sorted(int(m.group(1)) for name in os.listdir(INSTRUCTIONS_DIR) if (m := pattern.match(name)))
+def systemInstructionFile(system_name: str) -> str:
+    path = f"{SYSTEMS_DIR}/{system_name}.md"
+    assert os.path.exists(path), f"no system instruction file {path}"
+    return path
 
-def _system_has_instructions(system_name: str) -> bool:
-    """Returns True only if the system has an instructions file (any version)."""
-    return resolveInstructionFile(system_name) is not None
+def listCoreVersions() -> list[str]:
+    """The core versions a story can be created with (the settings + New Story pickers)."""
+    return sorted(f[:-3] for f in os.listdir(CORE_DIR) if f.endswith(".md") and not f.startswith("_"))
 
 def isValidGameSystem(system_name: str) -> bool:
     """Public validator to ensure the requested system has the required assets."""
-    return _system_has_instructions(system_name)
+    return os.path.exists(f"{SYSTEMS_DIR}/{system_name}.md")
 
 def listGameSystemNames() -> list[str]:
-    """Distinct system base names backed by an instruction file (versions collapsed)."""
-    return sorted({re.sub(r"\d*\.md$", "", f) for f in os.listdir(INSTRUCTIONS_DIR) if f.endswith(".md") and not f.startswith("_")})
+    return sorted(f[:-3] for f in os.listdir(SYSTEMS_DIR) if f.endswith(".md") and not f.startswith("_"))
 
-def makeNewStoryDir(display_name: str, system: str, model_name: str, root: str = STORIES_ROOT_DIR) -> str:
+def makeNewStoryDir(display_name: str, system: str, core: str, model_name: str, root: str = STORIES_ROOT_DIR) -> str:
     """Create a new story directory (named by a fresh uuid) under `root` and return its id.
     `root` is EVAL_STORIES_DIR for turns captured into the prompt studio."""
     story_id = uuid.uuid4().hex[:16]
@@ -118,6 +135,7 @@ def makeNewStoryDir(display_name: str, system: str, model_name: str, root: str =
     with open(os.path.join(story_dir, "info.json"), "w") as f:
         json.dump({
             "system": system,
+            "core": core,
             "model": model_name,
             "story_name": display_name,
             "created": datetime.now().isoformat(),
@@ -165,12 +183,13 @@ def loadStoryInfo(story_id: str, model_name: str = None, system_name: str = None
 def historyExists(story_id: str) -> bool:
     return os.path.exists(f"./stories/{story_id}/history.json")
 
-def getFullStoryInstruction(system_name: str, files: dict[str, str], versions: dict[str, int] | None = None) -> str:
+def getFullStoryInstruction(system_name: str, core_version: str, files: dict[str, str]) -> str:
     """Fetches the system instructions and appends the named story-context entries (pc,
     story_plan, story_summary) pulled from the in-memory `files` dict.
 
-    `versions` pins instruction files to an exact version ({"core": 0}); bases left out
-    resolve to the latest. The prompt studio uses this to compare two versions side by side.
+    `core_version` picks which file in instructions/core/ to load — a story's own version for
+    play, and the version under test for a prompt-studio lane. Only its contents go into the
+    prompt; the version name is never shown to the model.
 
     Each section is wrapped in XML tags for clarity:
     - <core_instructions>/<system_instructions>: base instructions (real files on disk)
@@ -178,17 +197,14 @@ def getFullStoryInstruction(system_name: str, files: dict[str, str], versions: d
     - <player_character>: The player character details
     - <story_summary>: Summary of story events so far
     """
-    versions = versions or {}
     result_parts = []
 
     # Load core instructions (required, shared across all systems)
-    with open(resolveInstructionFile("core", versions.get("core")), 'r') as f:
-        core_instructions = f.read()
+    core_instructions = readMarkdown(coreInstructionFile(core_version))
     result_parts.append(f"<core_instructions>\n{core_instructions}\n</core_instructions>")
 
     # Load system-specific instructions (required)
-    with open(resolveInstructionFile(system_name, versions.get(system_name)), 'r') as f:
-        system_instructions = f.read()
+    system_instructions = readMarkdown(systemInstructionFile(system_name))
     result_parts.append(f"<system_instructions>\n{system_instructions}\n</system_instructions>")
 
     for fname, tag in PROMPT_CONTEXT_FILES.items():
@@ -260,9 +276,14 @@ def loadAllPreviousHistory(story_id: str) -> list[dict]:
 
 def _sourceFileState(source_dir: str, at_start: bool = False) -> dict[str, str]:
     """Reconstruct a story's story-context files from its history tree (empty if no tree or a
-    legacy flat history, which carries no file deltas). `at_start` gives the state at the root
-    of the active path (pre-turn-1, i.e. just the seeded context) instead of the current leaf."""
+    legacy flat history, which carries no file deltas). `at_start` gives the state at the root of
+    the active path (pre-turn-1, i.e. just the seeded context) instead of the current leaf; for an
+    archived story that root lives in the oldest archive, since archiving starts a fresh tree whose
+    root carries the whole story context as it stood at compaction time."""
     history_path = os.path.join(source_dir, "history.json")
+    oldest_archive = os.path.join(source_dir, "previous", "0.json")
+    if at_start and os.path.exists(oldest_archive):
+        history_path = oldest_archive
     if not os.path.exists(history_path):
         return {}
     with open(history_path) as f:
@@ -298,10 +319,11 @@ def copyStory(source_story_id: str, new_name: str, new_model_name: str, mode: st
     new_story_id = uuid.uuid4().hex[:16]
     new_dir = f"./{STORIES_ROOT_DIR}/{new_story_id}"
     os.makedirs(new_dir)
-    source_system = loadStoryInfo(source_story_id).get('system', 'hp')
+    source_info = loadStoryInfo(source_story_id)
     with open(os.path.join(new_dir, "info.json"), "w") as f:
         json.dump({
-            "system": source_system,
+            "system": source_info.get('system', 'hp'),
+            "core": source_info.get('core'),
             "model": new_model_name,
             "story_name": new_name,
             "created": datetime.now().isoformat(),

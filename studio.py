@@ -10,7 +10,7 @@ from model_tools import SYSTEM_TOOLBOXES
 from openrouter import OpenRouterProvider
 from callbacks import StudioCallbackHandler
 
-# The prompt studio regenerates one captured turn under two instruction versions at once, so the
+# The prompt studio regenerates one captured turn under two core-instruction versions at once, so the
 # versions can be read side by side. A captured turn lives in ./eval_stories/<id>/ with the exact
 # on-disk shape of a story (info.json + history.json) — it is a fork of the source story trimmed to
 # the turn, so the state is frozen and the source is untouched.
@@ -33,7 +33,7 @@ def listEvalTurns() -> list[dict]:
         with open(info_path) as f:
             info = json.load(f)
         turns.append({"id": eid, "name": info.get("story_name", eid), "system": info["system"],
-                      "model": info["model"], "created": info.get("created", "")})
+                      "model": info["model"], "core": info.get("core"), "created": info.get("created", "")})
     return sorted(turns, key=lambda t: t["created"], reverse=True)
 
 def _turnContext(eval_id: str) -> tuple[dict, list[dict], dict[str, str]]:
@@ -65,7 +65,7 @@ def listRuns(eval_id: str) -> list[dict]:
         with open(f"{runs_dir}/{name}") as f:
             run = json.load(f)
         runs.append({"file": name, "started": run["started"], "model": run["model"], "n": run["n"],
-                     "base": run["base"], "versions": run["versions"],
+                     "versions": run["versions"],
                      "cost": sum(l["cost"] for l in run["lanes"].values())})
     return sorted(runs, key=lambda r: r["started"], reverse=True)
 
@@ -94,7 +94,7 @@ def loadRun(eval_id: str, file: str) -> dict:
     run["lanes"] = {lane: {"cost": l["cost"], "events": _replayEvents(l["messages"])} for lane, l in run["lanes"].items()}
     return run
 
-def _runLane(socket: SocketIO, cfg: dict, lane: str, version: int, prefix: list[dict], before: dict, state: dict,
+def _runLane(socket: SocketIO, cfg: dict, lane: str, version: str, prefix: list[dict], before: dict, state: dict,
              gate: threading.Event | None, is_primer: bool) -> None:
     # With caching on, one lane per version goes first and the rest wait for it to start producing
     # output — by then the shared prefix is cached, so they read it instead of paying to write it again.
@@ -109,7 +109,7 @@ def _runLane(socket: SocketIO, cfg: dict, lane: str, version: int, prefix: list[
         thinking_effort="max",
         cache_mode=cfg["cache_mode"],
     )
-    system_prompt = getFullStoryInstruction(cfg["system"], before, versions={cfg["base"]: version})
+    system_prompt = getFullStoryInstruction(cfg["system"], version, before)
     block = {"type": "text", "text": system_prompt}
     if (cc := provider.cacheControl()) is not None:
         block["cache_control"] = cc
@@ -131,13 +131,13 @@ def _runLane(socket: SocketIO, cfg: dict, lane: str, version: int, prefix: list[
         socket.emit('studio_run_end', {"run_id": cfg["run_id"], "path": path,
                                        "cost": sum(l["cost"] for l in state["lanes"].values())})
 
-def runStudio(socket: SocketIO, eval_id: str, base: str, ver_a: int, ver_b: int, n: int, model: str, cache: bool) -> str:
+def runStudio(socket: SocketIO, eval_id: str, ver_a: str, ver_b: str, n: int, model: str, cache: bool) -> str:
     """Generate n completions per version for a captured turn, streaming each into its own lane.
     Lanes run concurrently as background tasks (SocketIO is in threading mode, so the blocking
     request in each provider gets its own thread). The two versions differ in their system prompt —
     the first block — so they share no cacheable prefix and get a staggering gate each."""
     info, prefix, before = _turnContext(eval_id)
-    cfg = {"run_id": uuid.uuid4().hex[:8], "eval_id": eval_id, "base": base, "versions": [ver_a, ver_b],
+    cfg = {"run_id": uuid.uuid4().hex[:8], "eval_id": eval_id, "versions": [ver_a, ver_b],
            "n": n, "model": model, "system": info["system"], "cache": cache,
            "cache_mode": "5m" if cache else "none", "started": datetime.now().isoformat()}
     gates = {ver: threading.Event() for ver in (ver_a, ver_b)} if cache and n > 1 else {}
