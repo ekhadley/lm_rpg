@@ -7,7 +7,6 @@ import { appendNarration, renderStreamedNarration } from './chat.js';
 // the same renderers the chat uses; a lane is just a wrapper element in a column.
 
 const modeToggle = document.getElementById('mode-toggle');
-const sidebarTitle = document.getElementById('sidebar-title');
 const evalTurnList = document.getElementById('eval-turn-list');
 const storyList = document.getElementById('story-list');
 const studioWrapper = document.getElementById('studio-wrapper');
@@ -42,7 +41,9 @@ function options(sel, values, selected) {
 
 function setMode(mode) {
     const studio = mode === 'studio';
-    sidebarTitle.textContent = studio ? 'Captured Turns' : 'Stories';
+    const filterBtn = document.getElementById('story-filter-btn');
+    if (studio && document.querySelector('.sidebar-filter.open')) filterBtn.click();  // clears the story filter too
+    filterBtn.style.display = studio ? 'none' : '';
     evalTurnList.style.display = studio ? '' : 'none';
     storyList.style.display = studio ? 'none' : '';
     studioWrapper.style.display = studio ? '' : 'none';

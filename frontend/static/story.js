@@ -1,4 +1,6 @@
 const stripProvider = (model) => model ? model.split('/').pop() : model;
+// The sidebar has room for the model but not its family name, and its brand mark says the rest.
+const shortModel = (model) => stripProvider(model).replace(/^claude-/, '');
 
 // Date for a story's last activity as mm/dd/yy. Empty for stories with no timestamp.
 const formatStoryDate = (ts) => {
@@ -6,6 +8,14 @@ const formatStoryDate = (ts) => {
     const d = new Date(ts);
     return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
 };
+
+// Display name and icon class per game system - the one place the frontend maps a system to its look.
+const SYSTEMS = {
+    hp: { label: 'Harry Potter', icon: 'hp-logo-icon' },
+    dnd5e: { label: 'D&D 5e', icon: 'fab fa-d-and-d' },
+    twd: { label: 'The Walking Dead', icon: 'twd-logo-icon' },
+};
+const systemInfo = (name) => SYSTEMS[name] || { label: name || 'unknown', icon: 'fas fa-scroll' };
 
 import {
     socket, storyList, chatHistory, chatHeader, welcomeWrapper, userInput, floatingButtons,
@@ -20,9 +30,10 @@ import {
     pendingStoryName, setPendingStoryName,
     fileList, newContextFileBtn, rightSidebar,
     fileViewerOverlay, fileViewerTitle, fileViewerBody, fileViewerToc, fileViewerClose,
-    fileViewerToggle, fileViewerSave, fileViewerEditor,
+    fileViewerModes, fileViewerMeta, fileViewerSave, fileViewerEditor,
 } from './state.js';
-import { showTypingIndicator, showConfirmPopup, positionPopupNear, getDefaultCore } from './ui.js';
+import { showTypingIndicator, showConfirmPopup, positionPopupNear, pointerAnchor, getDefaultCore } from './ui.js';
+import { brandIcon } from './brands.js';
 
 // The two ways to copy a story. Both open the same modal; the mode picks its wording and is the
 // only thing the server needs, so there is nothing to tick.
@@ -39,46 +50,106 @@ const COPY_MODES = {
 let copyMode = 'duplicate';
 
 // Currently-open file in the viewer (for the raw/rendered toggle + editing).
-let currentFile = null, currentContent = '', rawMode = false;
+let currentFile = null, currentContent = '', rawMode = false, dirty = false, editable = false;
 // Entry names the system prompt pulls in by name (sent with story_locked).
 let promptContextNames = new Set();
 // Set to a filename to open it in raw/edit mode when its content arrives.
 let openRawOnLoad = null;
 
-export function addStoryFileToSidebar(filename) {
-    if (!fileList || !filename) return;
-    if (fileList.querySelector('.file-item[data-filename="' + filename + '"]')) return;
+// Byte size of a context entry, as the sidebar and the viewer header show it.
+const formatSize = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+// An entry past this is big enough to be worth noticing in the system prompt, so its size reads amber.
+const SIZE_WARN = 32 * 1024;
+
+// name -> byte size for every entry in the current branch's story context.
+let contextSizes = {};
+
+function contextRow(name) {
     const li = document.createElement('li');
     li.className = 'file-item';
-    li.dataset.filename = filename;
-    li.innerHTML = '<i class="fas fa-file-lines"></i>';
-    const span = document.createElement('span');
-    span.className = 'file-item-name';
-    span.textContent = filename;
-    li.appendChild(span);
-    const del = document.createElement('button');
-    del.className = 'file-item-delete';
-    del.title = 'Delete entry';
-    del.innerHTML = '<i class="fas fa-trash"></i>';
-    li.appendChild(del);
-    fileList.appendChild(li);
+    li.dataset.filename = name;
+    const size = contextSizes[name] || 0;
+    const inPrompt = promptContextNames.has(name);
+    li.innerHTML = (inPrompt ? '<span class="file-item-dot' + (size >= SIZE_WARN ? ' warn' : '') + '"></span>' : '')
+        + '<span class="file-item-name"></span>'
+        + '<span class="file-item-size' + (size >= SIZE_WARN ? ' warn' : '') + '">' + formatSize(size) + '</span>'
+        + '<button class="file-item-menu" title="Entry options"><i class="fas fa-ellipsis-v"></i></button>';
+    li.querySelector('.file-item-name').textContent = name;
+    return li;
+}
+
+function groupCaption(text, count) {
+    const li = document.createElement('li');
+    li.className = 'file-group';
+    li.innerHTML = '<span></span><span class="file-group-count">' + (count > 1 ? count : '') + '</span>';
+    li.firstChild.textContent = text;
+    return li;
+}
+
+// The sidebar list: entries the system prompt pulls in by name first, then everything the narrator
+// has written (NPC sheets, mostly), then the row that creates a new entry.
+function renderFileList() {
+    if (!fileList) return;
+    const names = Object.keys(contextSizes);
+    const inPrompt = [...promptContextNames].filter(n => names.includes(n));
+    const rest = names.filter(n => !promptContextNames.has(n)).sort();
+    fileList.innerHTML = '';
+    if (inPrompt.length) {
+        fileList.appendChild(groupCaption('Core Files'));
+        inPrompt.forEach(n => fileList.appendChild(contextRow(n)));
+    }
+    if (rest.length) {
+        fileList.appendChild(groupCaption('Characters', rest.length));
+        rest.forEach(n => fileList.appendChild(contextRow(n)));
+    }
+    const add = document.createElement('li');
+    add.className = 'file-item file-item-add';
+    add.innerHTML = '<i class="fas fa-plus"></i><span>New entry</span>';
+    fileList.appendChild(add);
+    markActiveFile();
+    applyContextFilter();
+}
+
+// The open entry keeps an accent bar in the list while the viewer is up.
+function markActiveFile() {
+    if (!fileList) return;
+    fileList.querySelectorAll('.file-item').forEach(el => el.classList.toggle('active', !!currentFile && el.dataset.filename === currentFile));
+}
+
+// Hide rows that don't match the filter box, and any group caption left with nothing under it.
+function applyContextFilter() {
+    const box = document.getElementById('context-filter');
+    if (!fileList || !box) return;
+    const q = box.value.trim().toLowerCase();
+    let group = null, shown = 0;
+    fileList.querySelectorAll('li').forEach(el => {
+        if (el.classList.contains('file-group')) {
+            if (group) group.classList.toggle('filtered-out', shown === 0);
+            group = el; shown = 0;
+            return;
+        }
+        if (!el.dataset.filename) return;  // the add row always stays
+        const hit = !q || el.dataset.filename.toLowerCase().includes(q);
+        el.classList.toggle('filtered-out', !hit);
+        if (hit) shown++;
+    });
+    if (group) group.classList.toggle('filtered-out', shown === 0);
 }
 
 // Inline row for naming a new story-context entry. The hint beneath the input lights up when the
 // typed name is one the system prompt pulls in by name, or is already taken.
 function startNewContextFile() {
     if (!fileList || fileList.querySelector('.file-item-new')) return;
-    const existing = new Set([...fileList.querySelectorAll('.file-item[data-filename]')].map(el => el.dataset.filename));
+    const existing = new Set(Object.keys(contextSizes));
     const li = document.createElement('li');
     li.className = 'file-item file-item-new';
-    li.innerHTML = '<i class="fas fa-file-lines"></i>';
     const input = document.createElement('input');
     input.className = 'file-item-input';
     input.placeholder = 'entry name';
     const hint = document.createElement('div');
     hint.className = 'file-item-hint';
     li.append(input, hint);
-    fileList.appendChild(li);
+    fileList.insertBefore(li, fileList.querySelector('.file-item-add'));
     input.focus();
 
     input.addEventListener('input', () => {
@@ -99,24 +170,38 @@ function startNewContextFile() {
     input.addEventListener('blur', () => li.remove());
 }
 
+// Rename in place: the row's name becomes an input, Enter commits, anything else drops it.
+function startEntryRename(li) {
+    const name = li.dataset.filename;
+    const span = li.querySelector('.file-item-name');
+    if (!span) return;
+    const input = document.createElement('input');
+    input.className = 'file-item-input';
+    input.value = name;
+    span.replaceWith(input);
+    input.focus();
+    input.select();
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') input.blur();
+        if (e.key !== 'Enter') return;
+        const next = input.value.trim();
+        input.blur();
+        if (next && next !== name) socket.emit('rename_story_file', { filename: name, new_name: next });
+    });
+    input.addEventListener('blur', () => renderFileList());
+}
+
 function setHeaderIcon(system) {
     const icon = document.getElementById('current-story-icon');
     if (!icon) return;
-    if (system === 'hp') {
-        icon.className = 'story-header-icon hp-logo-icon';
-    } else if (system === 'twd') {
-        icon.className = 'story-header-icon twd-logo-icon';
-    } else if (system === 'dnd5e') {
-        icon.className = 'fab fa-d-and-d story-header-icon';
-    } else {
-        icon.className = 'fas fa-scroll story-header-icon';
-    }
+    icon.className = 'story-header-icon ' + systemInfo(system).icon;
     icon.style.display = '';
 }
 
 // Switch the UI into the chat view for a selected story (title, icon, model, panels).
 function enterStoryView({ storyId, displayName, model, system }) {
     setCurrentStory(storyId);
+    renderStoryList();  // moves the sidebar's active row to this story
     const titleEl = document.getElementById('current-story-title');
     if (titleEl) titleEl.textContent = displayName;
     if (system) setHeaderIcon(system);
@@ -141,73 +226,79 @@ function enterStoryView({ storyId, displayName, model, system }) {
 // Select a story directly (when info.json exists)
 export function selectStoryDirectly(storyId) {
     socket.emit('select_story', { "selected_story": storyId });
-    const storyItem = storyList ? storyList.querySelector('.story-item[data-story="' + storyId + '"]') : null;
-    const displayName = storyItem ? storyItem.querySelector('.story-name').textContent : storyId;
-    const sidebarIcon = storyItem ? storyItem.querySelector('[title]') : null;
-    const system = sidebarIcon ? sidebarIcon.getAttribute('title') : null;
-    const modelText = storyItem ? storyItem.querySelector('.story-meta').textContent.trim() : '';
-    enterStoryView({ storyId, displayName, model: modelText, system });
+    const story = storyById(storyId);
+    enterStoryView({ storyId, displayName: story.name, model: story.model, system: story.system });
+}
+
+// Every story the sidebar knows about, newest activity first (the order the server sends them in).
+let stories = window.STORIES || [];
+let storyFilter = '';
+const storyById = (id) => stories.find(s => s.id === id);
+
+// The story list, grouped by game system: a group per system, ordered by its most recent story,
+// with the stories inside it in the same activity order. Filter text matches on the story name.
+export function renderStoryList() {
+    if (!storyList) return;
+    storyList.innerHTML = '';
+    const shown = stories.filter(s => s.name.toLowerCase().includes(storyFilter));
+    for (const system of new Set(shown.map(s => s.system))) {
+        const info = systemInfo(system);
+        const group = shown.filter(s => s.system === system);
+        const bar = document.createElement('li');
+        bar.className = 'story-group';
+        bar.dataset.system = system;
+        bar.innerHTML = `<i class="story-group-icon ${info.icon}"></i><span class="story-group-name"></span><span class="story-group-count">${group.length}</span>`;
+        bar.querySelector('.story-group-name').textContent = info.label;
+        storyList.appendChild(bar);
+        group.forEach(story => storyList.appendChild(storyRow(story)));
+    }
+}
+
+// One story: its name, then the model it runs on and when it was last played. The tail fades out
+// on hover to make room for the row's menu button.
+function storyRow(story) {
+    const li = document.createElement('li');
+    li.className = 'story-item' + (story.id === currentStory ? ' active' : '');
+    li.dataset.story = story.id;
+    li.dataset.system = story.system;  // the active row's edge takes its system's colour
+    const name = document.createElement('span');
+    name.className = 'story-name';
+    name.textContent = story.name;
+    const tail = document.createElement('span');
+    tail.className = 'story-tail';
+    tail.innerHTML = brandIcon(story.model) + '<span class="story-model"></span><span class="story-date"></span>';
+    tail.querySelector('.story-model').textContent = shortModel(story.model);
+    tail.querySelector('.story-date').textContent = formatStoryDate(story.last_activity);
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'story-menu-btn';
+    menuBtn.title = 'Story options';
+    menuBtn.innerHTML = '<i class="fas fa-ellipsis-v"></i>';
+    li.append(name, tail, menuBtn);
+    return li;
 }
 
 // Add a new story to the sidebar list
 export function addNewStory(story) {
-    const li = document.createElement('li');
-    li.className = 'story-item';
-    li.setAttribute('data-story', story.id);
-    if (story.model) li.setAttribute('data-model', story.model);
+    stories.unshift(story);  // newest activity, so it heads the list and its system's group
+    renderStoryList();
+}
 
-    let icon;
-    const system = story.system || 'unknown';
-    if (system === 'hp') {
-        icon = document.createElement('span');
-        icon.className = 'hp-logo-icon';
-    } else if (system === 'twd') {
-        icon = document.createElement('span');
-        icon.className = 'twd-logo-icon';
-    } else {
-        icon = document.createElement('i');
-        icon.className = system === 'dnd5e' ? 'fab fa-d-and-d' : 'fas fa-scroll';
+// The Duplicate / New Run modal, filled in from its preset and the story it was opened on.
+function openCopyStoryModal(story, mode, anchor) {
+    if (!copyStoryModal) return;
+    copyMode = mode;
+    const preset = COPY_MODES[mode];
+    setPendingStoryName(story.id);
+    copyStoryModalTitle.textContent = preset.title;
+    copyStoryModalIcon.className = 'fas ' + preset.icon;
+    copyStoryHint.textContent = preset.hint;
+    copyStoryBtn.textContent = preset.button;
+    if (copyStoryNameInput) copyStoryNameInput.value = story.name + preset.suffix;
+    if (copyStoryModelSelect && copyStoryModelSelect.querySelector('option[value="' + CSS.escape(story.model) + '"]')) {
+        copyStoryModelSelect.value = story.model;
+        copyStoryModelSelect.dispatchEvent(new Event('change', { bubbles: true }));
     }
-    icon.title = system;
-
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'story-item-content';
-    const nameRow = document.createElement('div');
-    nameRow.className = 'story-name-row';
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'story-name';
-    nameSpan.textContent = story.name;
-    nameRow.appendChild(nameSpan);
-    const metaRow = document.createElement('div');
-    metaRow.className = 'story-meta-row';
-    const metaSpan = document.createElement('span');
-    metaSpan.className = 'story-meta';
-    metaSpan.textContent = stripProvider(story.model) || 'unknown';
-    const dateSpan = document.createElement('span');
-    dateSpan.className = 'story-date';
-    dateSpan.textContent = formatStoryDate(story.last_activity);
-    metaRow.appendChild(metaSpan);
-    metaRow.appendChild(dateSpan);
-    contentDiv.appendChild(nameRow);
-    contentDiv.appendChild(metaRow);
-
-    const menuBtn = document.createElement('button');
-    menuBtn.className = 'story-menu-btn';
-    menuBtn.dataset.story = story.id;
-    menuBtn.title = 'Story options';
-    menuBtn.innerHTML = '<i class="fas fa-ellipsis-v"></i>';
-
-    const contextMenu = document.createElement('div');
-    contextMenu.className = 'story-context-menu';
-    contextMenu.dataset.story = story.id;
-    contextMenu.innerHTML = '<div class="context-menu-item" data-action="rename-story"><i class="fas fa-pen"></i><span>Rename Story</span></div><div class="context-menu-item" data-action="copy-story" data-mode="duplicate"><i class="fas fa-copy"></i><span>Duplicate</span></div><div class="context-menu-item" data-action="copy-story" data-mode="run"><i class="fas fa-rotate-right"></i><span>New Run</span></div><div class="context-menu-item delete" data-action="delete-story"><i class="fas fa-trash"></i><span>Delete Story</span></div>';
-
-    li.appendChild(icon);
-    li.appendChild(contentDiv);
-    li.appendChild(menuBtn);
-    li.appendChild(contextMenu);
-    // Newest story has the most recent activity, so it goes to the top of the list.
-    storyList.prepend(li);
+    positionPopupNear(copyStoryModal, anchor);
 }
 
 function closeCopyStoryModal() {
@@ -245,9 +336,10 @@ function startRename(nameSpan) {
     nameSpan.addEventListener('blur', () => finish(true));
 }
 
+const closeRowMenus = () => document.querySelectorAll('.story-context-menu.show').forEach(m => m.classList.remove('show'));
+
 export function initStory() {
-    // Fill in last-activity dates on the server-rendered story list
-    document.querySelectorAll('.story-date[data-ts]').forEach(el => { el.textContent = formatStoryDate(el.dataset.ts); });
+    renderStoryList();
 
     // New Story button opens create modal
     if (newStoryBtn) {
@@ -259,87 +351,74 @@ export function initStory() {
         });
     }
 
-    // Story list click handler
+    // Story list: the menu button opens the shared row menu, anywhere else on a row opens the story.
+    const storyMenu = document.getElementById('story-item-menu');
+    let storyMenuTarget = null;
     if (storyList) {
         storyList.addEventListener('click', function(e) {
             if (e.target.closest('.story-name.editing')) return;
+            const item = e.target.closest('.story-item');
+            if (!item) return;
             const menuBtn = e.target.closest('.story-menu-btn');
             if (menuBtn) {
-                e.stopPropagation();
-                const storyItem = menuBtn.closest('.story-item');
-                const contextMenu = storyItem.querySelector('.story-context-menu');
-                document.querySelectorAll('.story-context-menu.show').forEach(m => m.classList.remove('show'));
-                if (contextMenu) {
-                    const rect = menuBtn.getBoundingClientRect();
-                    contextMenu.style.top = rect.bottom + 'px';
-                    contextMenu.style.left = rect.left + 'px';
-                    contextMenu.classList.toggle('show');
-                }
+                e.stopPropagation();  // else the document listener that dismisses the popup sees this same click
+                storyMenuTarget = item;
+                positionPopupNear(storyMenu, menuBtn);
                 return;
             }
-
-            const menuItem = e.target.closest('.context-menu-item');
-            if (menuItem && menuItem.dataset.action === 'rename-story') {
-                e.stopPropagation();
-                const storyItem = menuItem.closest('.story-item');
-                menuItem.closest('.story-context-menu').classList.remove('show');
-                const nameSpan = storyItem.querySelector('.story-name');
-                if (nameSpan) startRename(nameSpan);
-                return;
-            }
-            if (menuItem && menuItem.dataset.action === 'copy-story') {
-                e.stopPropagation();
-                const storyItem = menuItem.closest('.story-item');
-                setPendingStoryName(storyItem.getAttribute('data-story'));
-                const displayName = storyItem.querySelector('.story-name').textContent;
-                copyMode = menuItem.dataset.mode;
-                menuItem.closest('.story-context-menu').classList.remove('show');
-                if (copyStoryModal) {
-                    const preset = COPY_MODES[copyMode];
-                    copyStoryModalTitle.textContent = preset.title;
-                    copyStoryModalIcon.className = 'fas ' + preset.icon;
-                    copyStoryHint.textContent = preset.hint;
-                    copyStoryBtn.textContent = preset.button;
-                    if (copyStoryNameInput) copyStoryNameInput.value = displayName + preset.suffix;
-                    const storyModel = storyItem.getAttribute('data-model');
-                    if (copyStoryModelSelect && storyModel && copyStoryModelSelect.querySelector('option[value="' + CSS.escape(storyModel) + '"]')) {
-                        copyStoryModelSelect.value = storyModel;
-                        copyStoryModelSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                    positionPopupNear(copyStoryModal, storyItem);
-                }
-                return;
-            }
-            if (menuItem && menuItem.dataset.action === 'delete-story') {
-                e.stopPropagation();
-                const storyItem = menuItem.closest('.story-item');
-                const storyId = storyItem.getAttribute('data-story');
-                const displayName = storyItem.querySelector('.story-name').textContent;
-                menuItem.closest('.story-context-menu').classList.remove('show');
-                showConfirmPopup('Delete "' + displayName + '"? It will be moved to the archive.', () => {
-                    socket.emit('delete_story', { story_id: storyId });
-                }, storyItem);
-                return;
-            }
-
-            let storyItem = e.target.closest('.story-item');
-            if (storyItem) {
-                let storyId = storyItem.getAttribute('data-story');
-                const modelSpan = storyItem.querySelector('.story-meta');
-                const model = modelSpan ? modelSpan.textContent.trim() : '';
-
-                if (model === 'unknown') {
-                    setPendingStoryName(storyId);
-                    if (selectStoryConfigModal) selectStoryConfigModal.classList.add('show');
-                } else {
-                    selectStoryDirectly(storyId);
-                }
+            const story = storyById(item.dataset.story);
+            if (story.model === 'unknown') {
+                setPendingStoryName(story.id);
+                if (selectStoryConfigModal) selectStoryConfigModal.classList.add('show');
+            } else {
+                selectStoryDirectly(story.id);
             }
         });
+    }
 
-        document.addEventListener('click', function() {
-            document.querySelectorAll('.story-context-menu.show').forEach(m => m.classList.remove('show'));
+    // Right-clicking a row opens the same menu its button does, at the cursor.
+    if (storyList) {
+        storyList.addEventListener('contextmenu', function(e) {
+            const item = e.target.closest('.story-item');
+            if (!item) return;
+            e.preventDefault();
+            closeRowMenus();
+            storyMenuTarget = item;
+            positionPopupNear(storyMenu, pointerAnchor(e));
         });
+    }
+
+    // Row menu: rename in place, the two copy presets, delete.
+    if (storyMenu) {
+        storyMenu.addEventListener('click', function(e) {
+            const action = e.target.closest('.context-menu-item');
+            if (!action || !storyMenuTarget) return;
+            e.stopPropagation();
+            const row = storyMenuTarget, story = storyById(row.dataset.story);
+            storyMenu.classList.remove('show');
+            if (action.dataset.action === 'rename-story') startRename(row.querySelector('.story-name'));
+            if (action.dataset.action === 'copy-story') openCopyStoryModal(story, action.dataset.mode, row);
+            if (action.dataset.action === 'delete-story') {
+                showConfirmPopup('Delete "' + story.name + '"? It will be moved to the archive.',
+                    () => socket.emit('delete_story', { story_id: story.id }), row);
+            }
+        });
+        document.addEventListener('click', () => storyMenu.classList.remove('show'));
+    }
+
+    // The filter box lives collapsed above the list until there is something to look for.
+    const storyFilterBox = document.getElementById('story-filter'), storyFilterBtn = document.getElementById('story-filter-btn');
+    if (storyFilterBtn && storyFilterBox) {
+        storyFilterBtn.addEventListener('click', function() {
+            const open = storyFilterBox.parentElement.classList.toggle('open');
+            if (open) storyFilterBox.focus();
+            else { storyFilterBox.value = ''; storyFilter = ''; renderStoryList(); }
+        });
+        storyFilterBox.addEventListener('input', function() {
+            storyFilter = storyFilterBox.value.trim().toLowerCase();
+            renderStoryList();
+        });
+        storyFilterBox.addEventListener('keydown', (e) => { if (e.key === 'Escape') storyFilterBtn.click(); });
     }
 
     // Select story config modal
@@ -349,15 +428,9 @@ export function initStory() {
             const modelName = selectStoryModelSelect.value;
             const systemName = selectStorySystemSelect.value;
 
-            if (storyList) {
-                storyList.querySelectorAll('.story-item').forEach(item => {
-                    if (item.getAttribute('data-story') === pendingStoryName) {
-                        const modelSpan = item.querySelector('.story-meta');
-                        if (modelSpan) modelSpan.textContent = stripProvider(modelName);
-                        item.setAttribute('data-model', modelName);
-                    }
-                });
-            }
+            const story = storyById(pendingStoryName);
+            story.model = modelName;
+            story.system = systemName;
 
             if (selectStoryConfigModal) selectStoryConfigModal.classList.remove('show');
 
@@ -367,9 +440,7 @@ export function initStory() {
                 "system_name": systemName
             });
 
-            const item = storyList ? storyList.querySelector('.story-item[data-story="' + pendingStoryName + '"]') : null;
-            const displayName = item ? item.querySelector('.story-name').textContent : pendingStoryName;
-            enterStoryView({ storyId: pendingStoryName, displayName, model: modelName, system: systemName });
+            enterStoryView({ storyId: pendingStoryName, displayName: story.name, model: modelName, system: systemName });
             setPendingStoryName(null);
         });
     }
@@ -450,10 +521,8 @@ export function initStory() {
 
     socket.on('story_deleted', function(data) {
         const storyId = data.story_id;
-        if (storyList) {
-            const item = storyList.querySelector('.story-item[data-story="' + storyId + '"]');
-            if (item) item.remove();
-        }
+        stories = stories.filter(s => s.id !== storyId);
+        renderStoryList();
         if (currentStory === storyId) {
             setCurrentStory(null);
             if (chatHistory) chatHistory.innerHTML = '';
@@ -471,11 +540,8 @@ export function initStory() {
 
     socket.on('story_renamed', function(data) {
         const { story_id, new_name } = data;
-        if (storyList) {
-            const item = storyList.querySelector('.story-item[data-story="' + story_id + '"]');
-            const nameSpan = item ? item.querySelector('.story-name') : null;
-            if (nameSpan) nameSpan.textContent = new_name;
-        }
+        storyById(story_id).name = new_name;
+        renderStoryList();
         if (currentStory === story_id) {
             const titleEl = document.getElementById('current-story-title');
             if (titleEl) titleEl.textContent = new_name;
@@ -484,54 +550,93 @@ export function initStory() {
 
     socket.on('story_locked', function(data) {
         console.log('Story locked with data:', data);
-        if (currentStory && storyList) {
-            storyList.querySelectorAll('.story-item').forEach(item => {
-                if (item.getAttribute('data-story') === currentStory && data.model_name) {
-                    const modelSpan = item.querySelector('.story-meta');
-                    if (modelSpan) modelSpan.textContent = stripProvider(data.model_name);
-                    item.setAttribute('data-model', data.model_name);
-                }
-            });
+        const story = currentStory ? storyById(currentStory) : null;
+        if (story && data.model_name) {
+            story.model = data.model_name;
+            renderStoryList();
         }
         // Populate right sidebar file list
         promptContextNames = new Set(data.prompt_context_names || []);
-        if (fileList) {
-            fileList.innerHTML = '';
-            (data.story_context || []).forEach(addStoryFileToSidebar);
-        }
-        // Update system instructions label
-        const label = document.getElementById('system-instructions-label');
-        if (label && data.system_name) {
-            label.textContent = 'Rulebook';
-        }
+        contextSizes = data.story_context || {};
+        renderFileList();
+        const badge = document.getElementById('context-story-badge');
+        if (badge) badge.textContent = [data.system_name, data.core_version].filter(Boolean).join(' \u00b7 ');
+    });
+
+    // Any change to the story context (a save, a tool write, a rename) comes back as the whole listing.
+    socket.on('story_files', function(data) {
+        promptContextNames = new Set(data.prompt_context_names || []);
+        contextSizes = data.story_context || {};
+        renderFileList();
+        if (currentFile && !(currentFile in contextSizes) && fileViewerOverlay) fileViewerOverlay.classList.remove('show');
+        updateViewerMeta();
     });
 
     // File list click handler
+    const rowMenu = document.getElementById('file-item-menu');
+    let menuTarget = null;
     if (fileList) {
         fileList.addEventListener('click', function(e) {
+            if (e.target.closest('.file-item-add')) { startNewContextFile(); return; }
             const item = e.target.closest('.file-item');
             if (!item || !item.dataset.filename) return;
-            const name = item.dataset.filename;
-            if (e.target.closest('.file-item-delete')) {
+            if (e.target.closest('.file-item-menu')) {
                 e.stopPropagation();  // else the document listener that dismisses the popup sees this same click
-                showConfirmPopup('Delete "' + name + '" from this branch?', () => socket.emit('delete_story_file', { filename: name }), item);
+                menuTarget = item;
+                positionPopupNear(rowMenu, e.target.closest('.file-item-menu'));
                 return;
             }
-            socket.emit('get_story_file', { filename: name });
+            socket.emit('get_story_file', { filename: item.dataset.filename });
+        });
+    }
+    if (fileList) {
+        fileList.addEventListener('contextmenu', function(e) {
+            const item = e.target.closest('.file-item');
+            if (!item || !item.dataset.filename) return;
+            e.preventDefault();
+            closeRowMenus();
+            menuTarget = item;
+            positionPopupNear(rowMenu, pointerAnchor(e));
         });
     }
     if (newContextFileBtn) newContextFileBtn.addEventListener('click', startNewContextFile);
 
+    // Row menu: rename in place, duplicate, jump straight to the raw editor, delete from this branch.
+    if (rowMenu) {
+        rowMenu.addEventListener('click', function(e) {
+            const action = e.target.closest('.context-menu-item');
+            if (!action || !menuTarget) return;
+            e.stopPropagation();
+            const name = menuTarget.dataset.filename, row = menuTarget;
+            rowMenu.classList.remove('show');
+            if (action.dataset.action === 'rename') startEntryRename(row);
+            if (action.dataset.action === 'duplicate') socket.emit('duplicate_story_file', { filename: name });
+            if (action.dataset.action === 'raw') {
+                openRawOnLoad = name;
+                socket.emit('get_story_file', { filename: name });
+            }
+            if (action.dataset.action === 'delete') {
+                showConfirmPopup('Delete "' + name + '" from this branch?', () => socket.emit('delete_story_file', { filename: name }), row);
+            }
+        });
+        document.addEventListener('click', () => rowMenu.classList.remove('show'));
+    }
+
+    // The filter box lives collapsed behind the magnifier until there is something to look for.
+    const filterBox = document.getElementById('context-filter'), filterBtn = document.getElementById('context-filter-btn');
+    if (filterBtn && filterBox) {
+        filterBtn.addEventListener('click', function() {
+            const open = filterBox.classList.toggle('open');
+            if (open) filterBox.focus();
+            else { filterBox.value = ''; applyContextFilter(); }
+        });
+        filterBox.addEventListener('input', applyContextFilter);
+        filterBox.addEventListener('keydown', (e) => { if (e.key === 'Escape') filterBtn.click(); });
+    }
+
     socket.on('story_file_created', function(data) {
-        addStoryFileToSidebar(data.filename);
         openRawOnLoad = data.filename;  // a new entry is empty, so drop straight into the editor
         socket.emit('get_story_file', { filename: data.filename });
-    });
-
-    socket.on('story_file_deleted', function(data) {
-        const item = fileList && fileList.querySelector('.file-item[data-filename="' + data.filename + '"]');
-        if (item) item.remove();
-        if (currentFile === data.filename && fileViewerOverlay) fileViewerOverlay.classList.remove('show');
     });
 
     // System instructions click handler
@@ -545,18 +650,37 @@ export function initStory() {
         if (!fileViewerOverlay) return;
         currentFile = data.filename;
         currentContent = data.content;
+        editable = !!data.editable;
         fileViewerTitle.textContent = data.filename;
-        fileViewerToggle.style.display = data.editable ? '' : 'none';
+        fileViewerModes.style.display = editable ? '' : 'none';
+        setDirty(false);
         setRawMode(openRawOnLoad === data.filename);
         openRawOnLoad = null;
+        updateViewerMeta();
+        markActiveFile();
         fileViewerOverlay.classList.add('show');
     });
+
+    // Size of the open entry, beside its name in the viewer header.
+    function updateViewerMeta() {
+        if (!fileViewerMeta) return;
+        const size = contextSizes[currentFile];
+        fileViewerMeta.textContent = size === undefined ? '' : formatSize(size);
+        fileViewerMeta.classList.toggle('warn', size >= SIZE_WARN);
+    }
+
+    // Save only offers itself once there is an edit to save; otherwise it reads as the file's state.
+    function setDirty(d) {
+        dirty = d;
+        fileViewerSave.textContent = d ? 'Save' : 'Saved';
+        fileViewerSave.classList.toggle('dirty', d);
+    }
 
     // Raw mode shows the editable textarea (+ Save button); rendered mode shows the markdown + TOC.
     function setRawMode(raw) {
         rawMode = raw;
-        fileViewerToggle.textContent = raw ? 'Rendered' : 'Raw';
-        fileViewerSave.style.display = raw ? '' : 'none';
+        fileViewerModes.querySelectorAll('.fv-mode').forEach(b => b.classList.toggle('active', (b.dataset.raw === '1') === raw));
+        fileViewerSave.style.display = raw && editable ? '' : 'none';
         if (raw) renderRaw(currentContent); else renderFile(currentContent);
     }
 
@@ -672,12 +796,15 @@ export function initStory() {
     }
 
     // Toggle between rendered markdown and a raw editable textarea
-    if (fileViewerToggle) {
-        fileViewerToggle.addEventListener('click', function() {
+    if (fileViewerModes) {
+        fileViewerModes.addEventListener('click', function(e) {
+            const btn = e.target.closest('.fv-mode');
+            if (!btn) return;
             if (rawMode) currentContent = fileViewerEditor.value;  // preview unsaved edits
-            setRawMode(!rawMode);
+            setRawMode(btn.dataset.raw === '1');
         });
     }
+    if (fileViewerEditor) fileViewerEditor.addEventListener('input', () => { if (!dirty) setDirty(true); });
 
     // Save the edited raw content back into the story's history tree
     if (fileViewerSave) {
@@ -687,18 +814,20 @@ export function initStory() {
             socket.emit('save_story_file', { filename: currentFile, content: currentContent });
         });
     }
-    socket.on('story_file_saved', function() {
-        fileViewerSave.textContent = 'Saved';
-        setTimeout(() => { fileViewerSave.textContent = 'Save'; }, 1200);
-    });
+    socket.on('story_file_saved', () => setDirty(false));
 
     // File viewer close
     if (fileViewerClose) {
-        fileViewerClose.addEventListener('click', () => fileViewerOverlay.classList.remove('show'));
+        fileViewerClose.addEventListener('click', closeViewer);
+    }
+    function closeViewer() {
+        fileViewerOverlay.classList.remove('show');
+        currentFile = null;
+        markActiveFile();
     }
     if (fileViewerOverlay) {
         fileViewerOverlay.addEventListener('click', function(e) {
-            if (e.target === fileViewerOverlay) fileViewerOverlay.classList.remove('show');
+            if (e.target === fileViewerOverlay) closeViewer();
         });
     }
 

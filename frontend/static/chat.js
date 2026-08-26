@@ -10,7 +10,6 @@ import {
     ensureLiveWrapper, ensureRow, appendReasoning, appendTool, appendDice, closeRows,
 } from './reasoningRow.js';
 import { addRetryButton, addEditButton, addRollbackButton, addForkButton, addCaptureButton } from './messageActions.js';
-import { addStoryFileToSidebar } from './story.js';
 
 // Render an out-of-narration <md> block as its own boxed markdown
 function mdBox(inner) {
@@ -249,6 +248,7 @@ export function initChat() {
 
     socket.on('conversation_history', function(nodes) {
         renderNodes(nodes);
+        socket.emit('list_story_files');  // navigation rebuilds the story context from the tree
         const hist = [];
         nodes.forEach(function(node) {
             node.messages.forEach(function(m) {
@@ -368,9 +368,8 @@ export function initChat() {
             if (tool.name === 'roll_dice') {
                 appendDice(w, [{ expr: inputs.dice || inputs.expression || '?', result: tool.result }]);
             } else {
-                if ((tool.name === 'write_file' || tool.name === 'append_file') && inputs.file_name) {
-                    addStoryFileToSidebar(inputs.file_name);
-                }
+                // the tools mutate the narrator's context in place, so pull the fresh listing
+                if (tool.name === 'write_file' || tool.name === 'append_file') socket.emit('list_story_files');
                 appendTool(w, { name: tool.name, inputs, result: tool.result });
             }
         });

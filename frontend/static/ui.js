@@ -179,6 +179,11 @@ export function hideSummarizePopup() {
     if (summarizePopup) summarizePopup.classList.remove('visible');
 }
 
+// A zero-size anchor at the pointer, so a right-click can put a popup where the cursor is.
+export const pointerAnchor = (e) => ({
+    getBoundingClientRect: () => ({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY, width: 0, height: 0 }),
+});
+
 // Position a side popup next to an anchor element, clamped to the viewport.
 export function positionPopupNear(popup, anchorEl) {
     popup.classList.add('show');

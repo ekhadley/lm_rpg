@@ -63,6 +63,14 @@ def set_models(data: dict):
     socket.emit('models_updated', {"models": models})
     logger.debug(f"model list updated ({len(models)} models)")
 
+# The story-context sidebar's whole payload: every entry with its size, plus which names the
+# system prompt pulls in by name (they get their own group at the top of the list).
+def contextListing() -> dict:
+    return {
+        "story_context": {name: len(text) for name, text in narrator.files.items()},
+        "prompt_context_names": list(PROMPT_CONTEXT_FILES),
+    }
+
 @socket.on('select_story')
 def select_story(data: dict[str, str]):
     logger.debug(f"selected story: '{data['selected_story']}'")
@@ -83,8 +91,8 @@ def select_story(data: dict[str, str]):
     emit('story_locked', {
         "model_name": narrator.model_name,
         "system_name": story_info["system"],
-        "story_context": list(narrator.files.keys()),
-        "prompt_context_names": list(PROMPT_CONTEXT_FILES),
+        "core_version": narrator.core_version,
+        **contextListing(),
     })
     logger.info(f"narrator initialized: {narrator}")
 
@@ -235,6 +243,7 @@ def save_story_file(data: dict[str, str]):
         return
     narrator.editFile(filename, data.get('content', ''))
     emit('story_file_saved', {"filename": filename})
+    emit('story_files', contextListing())
 
 @socket.on('create_story_file')
 def create_story_file(data: dict[str, str]):
@@ -248,6 +257,7 @@ def create_story_file(data: dict[str, str]):
         return
     narrator.editFile(filename, '')
     emit('story_file_created', {"filename": filename})
+    emit('story_files', contextListing())
 
 @socket.on('delete_story_file')
 def delete_story_file(data: dict[str, str]):
@@ -261,6 +271,47 @@ def delete_story_file(data: dict[str, str]):
         return
     narrator.deleteFile(filename)
     emit('story_file_deleted', {"filename": filename})
+    emit('story_files', contextListing())
+
+@socket.on('rename_story_file')
+def rename_story_file(data: dict[str, str]):
+    global narrator
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
+    old_name, new_name = data.get('filename', ''), data.get('new_name', '').strip()
+    if old_name not in narrator.files or not new_name or new_name in narrator.files:
+        emit('error', {"message": f"Cannot rename {old_name!r} to {new_name!r}"})
+        return
+    narrator.editFile(new_name, narrator.files[old_name])
+    narrator.deleteFile(old_name)
+    emit('story_files', contextListing())
+
+@socket.on('duplicate_story_file')
+def duplicate_story_file(data: dict[str, str]):
+    global narrator
+    if narrator is None:
+        emit('error', {"message": "No story selected"})
+        return
+    filename = data.get('filename', '')
+    if filename not in narrator.files:
+        emit('error', {"message": f"File not found: {filename}"})
+        return
+    copy_name = f"{filename}_copy"
+    n = 2
+    while copy_name in narrator.files:
+        copy_name, n = f"{filename}_copy_{n}", n + 1
+    narrator.editFile(copy_name, narrator.files[filename])
+    emit('story_files', contextListing())
+
+# The model's file tools mutate narrator.files in place, so the sidebar asks for a fresh listing
+# whenever a turn touches them.
+@socket.on('list_story_files')
+def list_story_files():
+    global narrator
+    if narrator is None:
+        return
+    emit('story_files', contextListing())
 
 @socket.on('get_debug_messages')
 def get_debug_messages():
@@ -329,7 +380,7 @@ def fork_story(data: dict[str, str]):
     new_id = narrator.fork_to(turn_id, new_name)
     if new_id:
         info = loadStoryInfo(new_id)
-        emit('story_forked', {"id": new_id, "name": new_name, "system": info.get('system', 'hp'), "model": info.get('model')})
+        emit('story_forked', {"id": new_id, "name": new_name, "system": info.get('system', 'hp'), "model": info.get('model'), "last_activity": story_last_activity(new_id)})
 
 @socket.on('capture_eval_turn')
 def capture_eval_turn(data: dict[str, str]):
